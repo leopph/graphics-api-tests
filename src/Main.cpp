@@ -24,7 +24,6 @@ using Microsoft::WRL::ComPtr;
 struct AppData {
 	ComPtr<ID3D11Device> d3dDevice;
 	ComPtr<ID3D11DeviceContext> immediateContext;
-	ComPtr<ID3D11DeviceContext> deferredContext;
 	ComPtr<ID3D11Debug> debug;
 	ComPtr<IDXGISwapChain1> swapChain;
 	ComPtr<ID3D11RenderTargetView> backBufRtv;
@@ -192,8 +191,6 @@ auto main() -> int {
 	D3D_FEATURE_LEVEL constexpr featureLevels[]{ D3D_FEATURE_LEVEL_11_0 };
 	D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, featureLevels, 1, D3D11_SDK_VERSION, appData->d3dDevice.GetAddressOf(), nullptr, appData->immediateContext.GetAddressOf());
 
-	appData->d3dDevice->CreateDeferredContext(0, appData->deferredContext.GetAddressOf());
-
 	ComPtr<IDXGIDevice2> dxgiDevice2;
 	appData->d3dDevice.As(&dxgiDevice2);
 
@@ -341,13 +338,13 @@ auto main() -> int {
 
 		WaitForSingleObjectEx(frameLatencyWaitable, INFINITE, true);
 
-		appData->deferredContext->VSSetShader(vertexShader.Get(), nullptr, 0);
-		appData->deferredContext->PSSetShader(pixelShader.Get(), nullptr, 0);
-		appData->deferredContext->IASetInputLayout(inputLayout.Get());
-		appData->deferredContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		appData->deferredContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
-		appData->deferredContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-		appData->deferredContext->VSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
+		appData->immediateContext->VSSetShader(vertexShader.Get(), nullptr, 0);
+		appData->immediateContext->PSSetShader(pixelShader.Get(), nullptr, 0);
+		appData->immediateContext->IASetInputLayout(inputLayout.Get());
+		appData->immediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		appData->immediateContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
+		appData->immediateContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+		appData->immediateContext->VSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
 
 		RECT clientRect;
 		GetClientRect(hwnd, &clientRect);
@@ -359,27 +356,22 @@ auto main() -> int {
 			.MinDepth = 0,
 			.MaxDepth = 1
 		};
-		appData->deferredContext->RSSetViewports(1, &viewport);
+		appData->immediateContext->RSSetViewports(1, &viewport);
 
 		D3D11_MAPPED_SUBRESOURCE mappedSubResource;
-		appData->deferredContext->Map(appData->cBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
+		appData->immediateContext->Map(appData->cBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
 		auto* const contants = static_cast<CBufData*>(mappedSubResource.pData);
 
 		auto const timeDiff = std::chrono::duration<float>{ now - begin }.count() / 6.f;
 		contants->offset[0] = std::abs(0.5f - (timeDiff - static_cast<int>(timeDiff))) * 3.8f;
 		contants->offset[1] = 0;
 
-		appData->deferredContext->Unmap(appData->cBuf.Get(), 0);
+		appData->immediateContext->Unmap(appData->cBuf.Get(), 0);
 
 		FLOAT constexpr clearColor[]{ 0.2f, 0.2f, 0.2f, 1 };
-		appData->deferredContext->ClearRenderTargetView(appData->backBufRtv.Get(), clearColor);
-		appData->deferredContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
-		appData->deferredContext->DrawIndexed(NUM_INDICES, 0, 0);
-
-		ComPtr<ID3D11CommandList> commandList;
-		appData->deferredContext->FinishCommandList(false, commandList.GetAddressOf());
-
-		appData->immediateContext->ExecuteCommandList(commandList.Get(), false);
+		appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), clearColor);
+		appData->immediateContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
+		appData->immediateContext->DrawIndexed(NUM_INDICES, 0, 0);
 
 		appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
 	}
