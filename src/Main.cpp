@@ -60,7 +60,7 @@ namespace {
 	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
 	FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
 	FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{ 0.16f, 0.67f, 0.53f, 1 };
-	FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.59f, 0, 0.09f, 1 };
+	FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.89f, 0.14f, 0.17f, 1 };
 
 
 	UINT gSyncInterval{ 0 };
