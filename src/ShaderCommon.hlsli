@@ -1,5 +1,6 @@
 cbuffer constants : register(b0)
 {
+    float4 color;
 	float2 offset;
 };
 
@@ -10,5 +11,5 @@ float4 vs_main(float2 pos : POS) : SV_POSITION
 
 float4 ps_main() : SV_TARGET
 {
-    return float4(0.8, 0.8, 0.8, 1);   
+    return color;
 }

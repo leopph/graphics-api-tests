@@ -16,6 +16,7 @@
 #endif
 
 #include <chrono>
+#include <cstring>
 #include <format>
 
 using Microsoft::WRL::ComPtr;
@@ -34,6 +35,7 @@ struct AppData {
 
 
 struct CBufData {
+	float color[4];
 	float offset[2];
 };
 
@@ -56,11 +58,15 @@ namespace {
 	float constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? 0 : 1.f / MAX_FPS };
 	DWORD constexpr WINDOWED_STYLE{ WS_BORDER | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_OVERLAPPED | WS_SYSMENU };
 	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
+	FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
+	FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{ 0.16f, 0.67f, 0.53f, 1 };
+	FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.59f, 0, 0.09f, 1 };
 
 
 	UINT gSyncInterval{ 0 };
 	UINT gSwapChainFlags{ 0 };
 	UINT gPresentFlags{ 0 };
+	FLOAT const* gObjectColor{ NO_OVERLAY_SUPPORT_COLOR };
 
 
 	auto SwitchBorderlessState(HWND const hwnd) -> void {
@@ -233,8 +239,13 @@ auto main() -> int {
 	dxgiFactory2->CreateSwapChainForHwnd(appData->d3dDevice.Get(), hwnd, &swapChainDesc, nullptr, nullptr, appData->swapChain.ReleaseAndGetAddressOf());
 	dxgiFactory2->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
 
-	ComPtr<IDXGISwapChain2> swapChain2;
-	appData->swapChain.As(&swapChain2);
+	ComPtr<IDXGIOutput> output;
+	appData->swapChain->GetContainingOutput(output.GetAddressOf());
+	ComPtr<IDXGIOutput2> output2;
+	output.As(&output2);
+	if (output2 && output2->SupportsOverlays()) {
+		gObjectColor = OVERLAY_SUPPORT_COLOR;
+	}
 
 #ifndef NDEBUG
 	appData->d3dDevice.As<ID3D11Debug>(&appData->debug);
@@ -340,6 +351,7 @@ auto main() -> int {
 		appData->immediateContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
 		appData->immediateContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
 		appData->immediateContext->VSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
+		appData->immediateContext->PSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
 
 		RECT clientRect;
 		GetClientRect(hwnd, &clientRect);
@@ -355,16 +367,16 @@ auto main() -> int {
 
 		D3D11_MAPPED_SUBRESOURCE mappedSubResource;
 		appData->immediateContext->Map(appData->cBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
-		auto* const contants = static_cast<CBufData*>(mappedSubResource.pData);
+		auto* const constants = static_cast<CBufData*>(mappedSubResource.pData);
 
 		auto const timeDiff = std::chrono::duration<float>{ now - begin }.count() / 6.f;
-		contants->offset[0] = std::abs(0.5f - (timeDiff - static_cast<int>(timeDiff))) * 3.8f;
-		contants->offset[1] = 0;
+		constants->offset[0] = std::abs(0.5f - (timeDiff - static_cast<int>(timeDiff))) * 3.8f;
+		constants->offset[1] = 0;
+		std::memcpy(constants->color, gObjectColor, sizeof(constants->color));
 
 		appData->immediateContext->Unmap(appData->cBuf.Get(), 0);
 
-		FLOAT constexpr clearColor[]{ 0.2f, 0.2f, 0.2f, 1 };
-		appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), clearColor);
+		appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
 		appData->immediateContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
 		appData->immediateContext->DrawIndexed(NUM_INDICES, 0, 0);
 
