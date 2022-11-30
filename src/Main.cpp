@@ -59,7 +59,7 @@ namespace {
 
 
 	UINT gSyncInterval{ 0 };
-	UINT gSwapChainFlags{ DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT };
+	UINT gSwapChainFlags{ 0 };
 	UINT gPresentFlags{ 0 };
 
 
@@ -235,8 +235,6 @@ auto main() -> int {
 
 	ComPtr<IDXGISwapChain2> swapChain2;
 	appData->swapChain.As(&swapChain2);
-	swapChain2->SetMaximumFrameLatency(2);
-	auto const frameLatencyWaitable = swapChain2->GetFrameLatencyWaitableObject();
 
 #ifndef NDEBUG
 	appData->d3dDevice.As<ID3D11Debug>(&appData->debug);
@@ -329,14 +327,11 @@ auto main() -> int {
 		MSG msg;
 		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
 			if (msg.message == WM_QUIT) {
-				CloseHandle(frameLatencyWaitable);
 				return static_cast<int>(msg.wParam);
 			}
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
 		}
-
-		WaitForSingleObjectEx(frameLatencyWaitable, INFINITE, true);
 
 		appData->immediateContext->VSSetShader(vertexShader.Get(), nullptr, 0);
 		appData->immediateContext->PSSetShader(pixelShader.Get(), nullptr, 0);
