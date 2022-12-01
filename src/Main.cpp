@@ -2,9 +2,7 @@
 #define NOMINMAX
 #include <Windows.h>
 #include <d3d11.h>
-#include <dxgi.h>
-#include <dxgi1_2.h>
-#include <dxgi1_5.h>
+#include <dxgi1_6.h>
 #include <wrl/client.h>
 
 #ifdef _NDEBUG
@@ -165,37 +163,31 @@ namespace {
 }
 
 
-auto main() -> int {
-	WNDCLASSEXW const windowClass{
-		.cbSize = sizeof(WNDCLASSEX),
+auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, _In_ int nCmdShow) -> int {
+	WNDCLASSW const windowClass{
 		.style = CS_HREDRAW | CS_VREDRAW,
 		.lpfnWndProc = &WindowProc,
-		.cbClsExtra = 0,
-		.cbWndExtra = 0,
-		.hInstance = GetModuleHandleW(nullptr),
+		.hInstance = hInstance,
 		.hIcon = LoadIconW(nullptr, IDI_APPLICATION),
 		.hCursor = LoadCursorW(nullptr, IDC_ARROW),
-		.hbrBackground = nullptr,
-		.lpszMenuName = nullptr,
-		.lpszClassName = L"MyWindowClass",
-		.hIconSm = LoadIconW(nullptr, IDI_APPLICATION)
+		.lpszClassName = L"MyWindowClass"
 	};
-	RegisterClassExW(&windowClass);
+	RegisterClassW(&windowClass);
 
 	auto const hwnd = CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WINDOWED_STYLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, windowClass.hInstance, nullptr);
-	ShowWindow(hwnd, SW_NORMAL);
+	ShowWindow(hwnd, nCmdShow);
 
 	SwitchBorderlessState(hwnd);
 
 	auto* const appData = reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
-	UINT flags = 0;
+	UINT deviceFlags = 0;
 #ifndef NDEBUG
-	flags |= D3D11_CREATE_DEVICE_DEBUG;
+	deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
 	D3D_FEATURE_LEVEL constexpr featureLevels[]{ D3D_FEATURE_LEVEL_11_0 };
-	D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, featureLevels, 1, D3D11_SDK_VERSION, appData->d3dDevice.GetAddressOf(), nullptr, appData->immediateContext.GetAddressOf());
+	D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceFlags, featureLevels, 1, D3D11_SDK_VERSION, appData->d3dDevice.GetAddressOf(), nullptr, appData->immediateContext.GetAddressOf());
 
 	ComPtr<IDXGIDevice2> dxgiDevice2;
 	appData->d3dDevice.As(&dxgiDevice2);
@@ -212,12 +204,11 @@ auto main() -> int {
 		dxgiFactory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof allowTearing);
 	}
 
+	OutputDebugStringW(std::format(L"Tearing in windowed mode is {}supported.\r\n", allowTearing ? L"" : L"not ").c_str());
+
 	if (allowTearing) {
 		gSwapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 		gPresentFlags |= DXGI_PRESENT_ALLOW_TEARING;
-	}
-	else {
-		MessageBoxW(hwnd, L"Tearing in windowed mode is not supported.", L"Warning", MB_ICONEXCLAMATION | MB_OK);
 	}
 
 	DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
@@ -245,6 +236,14 @@ auto main() -> int {
 	output.As(&output2);
 	if (output2 && output2->SupportsOverlays()) {
 		gObjectColor = OVERLAY_SUPPORT_COLOR;
+	}
+	ComPtr<IDXGIOutput6> output6;
+	output.As(&output6);
+	if (output6) {
+		UINT supportFlags;
+		output6->CheckHardwareCompositionSupport(&supportFlags);
+		OutputDebugStringW(std::format(L"Fullscreen hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? L"" : L"not ").c_str());
+		OutputDebugStringW(std::format(L"Windowed hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? L"" : L"not ").c_str());
 	}
 
 #ifndef NDEBUG
