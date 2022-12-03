@@ -111,12 +111,23 @@ namespace {
 				auto const width = LOWORD(lparam);
 				auto const height = HIWORD(lparam);
 				if (width && height) {
-					if (appData->swapChain) {
+					if (appData->swapChain && appData->backBufRtv && appData->d3dDevice) {
 						appData->backBufRtv.Reset();
 						appData->swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, gSwapChainFlags);
 						ComPtr<ID3D11Texture2D> backBuf;
 						appData->swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuf.GetAddressOf()));
 						appData->d3dDevice->CreateRenderTargetView(backBuf.Get(), nullptr, appData->backBufRtv.GetAddressOf());
+					}
+					if (appData->immediateContext) {
+						D3D11_VIEWPORT const viewport{
+							.TopLeftX = 0,
+							.TopLeftY = 0,
+							.Width = static_cast<FLOAT>(width),
+							.Height = static_cast<FLOAT>(height),
+							.MinDepth = 0,
+							.MaxDepth = 1
+						};
+						appData->immediateContext->RSSetViewports(1, &viewport);
 					}
 				}
 				return 0;
@@ -320,6 +331,26 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	};
 	appData->d3dDevice->CreateBuffer(&cBufDesc, nullptr, appData->cBuf.GetAddressOf());
 
+	appData->immediateContext->VSSetShader(vertexShader.Get(), nullptr, 0);
+	appData->immediateContext->PSSetShader(pixelShader.Get(), nullptr, 0);
+	appData->immediateContext->IASetInputLayout(inputLayout.Get());
+	appData->immediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	appData->immediateContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
+	appData->immediateContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+	appData->immediateContext->VSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
+	appData->immediateContext->PSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
+	RECT clientRect;
+	GetClientRect(hwnd, &clientRect);
+	D3D11_VIEWPORT const viewport{
+		.TopLeftX = 0,
+		.TopLeftY = 0,
+		.Width = static_cast<FLOAT>(clientRect.right - clientRect.left),
+		.Height = static_cast<FLOAT>(clientRect.bottom - clientRect.top),
+		.MinDepth = 0,
+		.MaxDepth = 1
+	};
+	appData->immediateContext->RSSetViewports(1, &viewport);
+
 	auto const begin = std::chrono::steady_clock::now();
 	auto lastFrameTime = begin;
 	float timeSinceLastFrame = 0;
@@ -342,27 +373,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 			TranslateMessage(&msg);
 			DispatchMessageW(&msg);
 		}
-
-		appData->immediateContext->VSSetShader(vertexShader.Get(), nullptr, 0);
-		appData->immediateContext->PSSetShader(pixelShader.Get(), nullptr, 0);
-		appData->immediateContext->IASetInputLayout(inputLayout.Get());
-		appData->immediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		appData->immediateContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
-		appData->immediateContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-		appData->immediateContext->VSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
-		appData->immediateContext->PSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
-
-		RECT clientRect;
-		GetClientRect(hwnd, &clientRect);
-		D3D11_VIEWPORT const viewport{
-			.TopLeftX = 0,
-			.TopLeftY = 0,
-			.Width = static_cast<FLOAT>(clientRect.right - clientRect.left),
-			.Height = static_cast<FLOAT>(clientRect.bottom - clientRect.top),
-			.MinDepth = 0,
-			.MaxDepth = 1
-		};
-		appData->immediateContext->RSSetViewports(1, &viewport);
 
 		D3D11_MAPPED_SUBRESOURCE mappedSubResource;
 		appData->immediateContext->Map(appData->cBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
