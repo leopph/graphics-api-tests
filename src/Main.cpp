@@ -57,8 +57,8 @@ namespace {
 	UINT constexpr NUM_INDICES{ ARRAYSIZE(INDEX_DATA) };
 	UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
 	UINT constexpr VERTEX_OFFSET{ 0 };
-	float constexpr MAX_FPS{ 60 };
-	auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<float>{ 1.0f / MAX_FPS }) };
+	auto constexpr MAX_FPS{ 60 };
+	auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) / MAX_FPS };
 	DWORD constexpr WINDOWED_STYLE{ WS_BORDER | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_OVERLAPPED | WS_SYSMENU };
 	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
 	FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
