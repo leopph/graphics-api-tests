@@ -14,6 +14,7 @@
 #endif
 
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <format>
 
@@ -40,10 +41,10 @@ struct CBufData {
 
 namespace {
 	float constexpr static VERTEX_DATA[]{
-		-1.0f, 1.0f,
-		-0.9f, 1.0f,
-		-0.9f, -1.0f,
-		-1.0f, -1.0f
+		-0.05f, 1.0f,
+		 0.05f, 1.0f,
+		 0.05f, -1.0f,
+		-0.05f, -1.0f
 	};
 	unsigned constexpr static INDEX_DATA[]{
 		0, 1, 2,
@@ -53,7 +54,7 @@ namespace {
 	UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
 	UINT constexpr VERTEX_OFFSET{ 0 };
 	float constexpr MAX_FPS{ 60 };
-	float constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? 0 : 1.f / MAX_FPS };
+	auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<float>{ 1.0f / MAX_FPS }) };
 	DWORD constexpr WINDOWED_STYLE{ WS_BORDER | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_OVERLAPPED | WS_SYSMENU };
 	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
 	FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
@@ -351,19 +352,18 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	};
 	appData->immediateContext->RSSetViewports(1, &viewport);
 
-	auto const begin = std::chrono::steady_clock::now();
-	auto lastFrameTime = begin;
-	float timeSinceLastFrame = 0;
+	auto const startTimePoint{ std::chrono::steady_clock::now() };
+	auto lastFrameTimePoint = startTimePoint;
+	auto deltaTime{ std::chrono::nanoseconds::zero() };
 
 	while (true) {
-		auto const now = std::chrono::steady_clock::now();
-		timeSinceLastFrame += std::chrono::duration<float>{now - lastFrameTime}.count();
-		lastFrameTime = now;
+		auto const now{ std::chrono::steady_clock::now() };
+		deltaTime += now - lastFrameTimePoint;
+		lastFrameTimePoint = now;
 
-		if (timeSinceLastFrame < MIN_FRAME_TIME) {
+		if (deltaTime < MIN_FRAME_TIME) {
 			continue;
 		}
-		timeSinceLastFrame = 0;
 
 		MSG msg;
 		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -378,8 +378,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		appData->immediateContext->Map(appData->cBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
 		auto* const constants = static_cast<CBufData*>(mappedSubResource.pData);
 
-		auto const timeDiff = std::chrono::duration<float>{ now - begin }.count() / 6.f;
-		constants->offset[0] = std::abs(0.5f - (timeDiff - static_cast<int>(timeDiff))) * 3.8f;
+		auto const totalElapsedTimeSeconds{ std::chrono::duration<float>{ now - startTimePoint }.count() / 6.f };
+		constants->offset[0] = (std::abs(totalElapsedTimeSeconds - static_cast<int>(totalElapsedTimeSeconds) - 0.5f) - 0.25f) * 3.8f;
 		constants->offset[1] = 0;
 		std::memcpy(constants->color, gObjectColor, sizeof(constants->color));
 
@@ -390,5 +390,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		appData->immediateContext->DrawIndexed(NUM_INDICES, 0, 0);
 
 		appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
+
+		deltaTime = std::chrono::nanoseconds::zero();
 	}
 }
