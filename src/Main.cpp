@@ -15,7 +15,6 @@
 
 #include <chrono>
 #include <cmath>
-#include <cstring>
 #include <format>
 
 using Microsoft::WRL::ComPtr;
@@ -27,15 +26,20 @@ struct AppData {
 	ComPtr<ID3D11Debug> debug;
 	ComPtr<IDXGISwapChain1> swapChain;
 	ComPtr<ID3D11RenderTargetView> backBufRtv;
-	ComPtr<ID3D11Buffer> cBuf;
+	ComPtr<ID3D11Buffer> colorCBuf;
+	ComPtr<ID3D11Buffer> offsetCBuf;
 	bool minimizeOnFocusLoss{ false };
 	bool isBorderless{ false };
 };
 
 
-struct CBufData {
-	float color[4];
-	float offset[2];
+struct ColorCBufData {
+	float objectColor[4];
+};
+
+
+struct OffsetCBufData {
+	float offsetX;
 };
 
 
@@ -322,15 +326,30 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	ComPtr<ID3D11Buffer> indexBuffer;
 	appData->d3dDevice->CreateBuffer(&indexBufferDesc, &subresourceData, indexBuffer.GetAddressOf());
 
-	D3D11_BUFFER_DESC constexpr cBufDesc{
-		.ByteWidth = sizeof(CBufData) + 16 - sizeof(CBufData) % 16,
+	D3D11_BUFFER_DESC constexpr colorCBufDesc{
+		.ByteWidth = sizeof(ColorCBufData) + 16 - sizeof(ColorCBufData) % 16,
+		.Usage = D3D11_USAGE_IMMUTABLE,
+		.BindFlags = D3D11_BIND_CONSTANT_BUFFER,
+		.CPUAccessFlags = 0,
+		.MiscFlags = 0,
+		.StructureByteStride = 0
+	};
+	D3D11_SUBRESOURCE_DATA const colorCBufData{
+		.pSysMem = gObjectColor,
+		.SysMemPitch = 0,
+		.SysMemSlicePitch = 0
+	};
+	appData->d3dDevice->CreateBuffer(&colorCBufDesc, &colorCBufData, appData->colorCBuf.GetAddressOf());
+
+	D3D11_BUFFER_DESC constexpr offsetCBufDesc{
+		.ByteWidth = sizeof(OffsetCBufData) + 16 - sizeof(OffsetCBufData) % 16,
 		.Usage = D3D11_USAGE_DYNAMIC,
 		.BindFlags = D3D11_BIND_CONSTANT_BUFFER,
 		.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
 		.MiscFlags = 0,
 		.StructureByteStride = 0
 	};
-	appData->d3dDevice->CreateBuffer(&cBufDesc, nullptr, appData->cBuf.GetAddressOf());
+	appData->d3dDevice->CreateBuffer(&offsetCBufDesc, nullptr, appData->offsetCBuf.GetAddressOf());
 
 	appData->immediateContext->VSSetShader(vertexShader.Get(), nullptr, 0);
 	appData->immediateContext->PSSetShader(pixelShader.Get(), nullptr, 0);
@@ -338,8 +357,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	appData->immediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	appData->immediateContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
 	appData->immediateContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-	appData->immediateContext->VSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
-	appData->immediateContext->PSSetConstantBuffers(0, 1, appData->cBuf.GetAddressOf());
+	appData->immediateContext->VSSetConstantBuffers(0, 1, appData->offsetCBuf.GetAddressOf());
+	appData->immediateContext->PSSetConstantBuffers(0, 1, appData->colorCBuf.GetAddressOf());
 	RECT clientRect;
 	GetClientRect(hwnd, &clientRect);
 	D3D11_VIEWPORT const viewport{
@@ -353,7 +372,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	appData->immediateContext->RSSetViewports(1, &viewport);
 
 	auto const startTimePoint{ std::chrono::steady_clock::now() };
-	auto lastFrameTimePoint = startTimePoint;
+	auto lastFrameTimePoint{ startTimePoint };
 	auto deltaTime{ std::chrono::nanoseconds::zero() };
 
 	while (true) {
@@ -374,19 +393,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 			DispatchMessageW(&msg);
 		}
 
-		D3D11_MAPPED_SUBRESOURCE mappedSubResource;
-		appData->immediateContext->Map(appData->cBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
-		auto* const constants = static_cast<CBufData*>(mappedSubResource.pData);
-
+		D3D11_MAPPED_SUBRESOURCE mappedOffsetCBuf;
+		appData->immediateContext->Map(appData->offsetCBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedOffsetCBuf);
+		auto* const offsetCBufData{ static_cast<OffsetCBufData*>(mappedOffsetCBuf.pData) };
 		auto const totalElapsedTimeSeconds{ std::chrono::duration<float>{ now - startTimePoint }.count() / 6.f };
-		constants->offset[0] = (std::abs(totalElapsedTimeSeconds - static_cast<int>(totalElapsedTimeSeconds) - 0.5f) - 0.25f) * 3.8f;
-		constants->offset[1] = 0;
-		std::memcpy(constants->color, gObjectColor, sizeof(constants->color));
+		offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<int>(totalElapsedTimeSeconds) - 0.5f) - 0.25f) * 3.8f;
+		appData->immediateContext->Unmap(appData->offsetCBuf.Get(), 0);
 
-		appData->immediateContext->Unmap(appData->cBuf.Get(), 0);
-
-		appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
 		appData->immediateContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
+		appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
 		appData->immediateContext->DrawIndexed(NUM_INDICES, 0, 0);
 
 		appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
