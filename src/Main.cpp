@@ -376,14 +376,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	auto deltaTime{ std::chrono::nanoseconds::zero() };
 
 	while (true) {
-		auto const now{ std::chrono::steady_clock::now() };
-		deltaTime += now - lastFrameTimePoint;
-		lastFrameTimePoint = now;
-
-		if (deltaTime < MIN_FRAME_TIME) {
-			continue;
-		}
-
 		MSG msg;
 		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
 			if (msg.message == WM_QUIT) {
@@ -396,7 +388,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		D3D11_MAPPED_SUBRESOURCE mappedOffsetCBuf;
 		appData->immediateContext->Map(appData->offsetCBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedOffsetCBuf);
 		auto* const offsetCBufData{ static_cast<OffsetCBufData*>(mappedOffsetCBuf.pData) };
-		auto const totalElapsedTimeSeconds{ std::chrono::duration<float>{ now - startTimePoint }.count() / 6.f };
+		auto const totalElapsedTimeSeconds{ std::chrono::duration<float>{ lastFrameTimePoint - startTimePoint }.count() / 6.f };
 		offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<int>(totalElapsedTimeSeconds) - 0.5f) - 0.25f) * 3.8f;
 		appData->immediateContext->Unmap(appData->offsetCBuf.Get(), 0);
 
@@ -406,6 +398,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
 		appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
 
-		deltaTime = std::chrono::nanoseconds::zero();
+		do {
+			deltaTime = std::chrono::steady_clock::now() - lastFrameTimePoint;
+		}
+		while (deltaTime < MIN_FRAME_TIME);
+
+		lastFrameTimePoint += deltaTime;
 	}
 }
