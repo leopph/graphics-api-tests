@@ -76,6 +76,12 @@ namespace {
 		auto* const appData{ reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
 		appData->isBorderless = !appData->isBorderless;
 
+		MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
+		GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+
+		int width;
+		int height;
+
 		if (!appData->isBorderless) {
 			DWORD constexpr style{ WINDOWED_STYLE | WS_VISIBLE };
 			SetWindowLongPtrW(hwnd, GWL_STYLE, style);
@@ -86,16 +92,16 @@ namespace {
 				.bottom = 720
 			};
 			AdjustWindowRect(&rect, style & ~WS_SYSMENU, FALSE);
-			SetWindowPos(hwnd, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED);
+			width = rect.right - rect.left;
+			height = rect.bottom - rect.top;
 		}
 		else {
-			auto const monitor{ MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
-			MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
-			if (GetMonitorInfoW(monitor, &monitorInfo)) {
-				SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE | WS_VISIBLE);
-				SetWindowPos(hwnd, nullptr, 0, 0, monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top, SWP_FRAMECHANGED);
-			}
+			SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE | WS_VISIBLE);
+			width = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
+			height = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
 		}
+
+		SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED);
 	}
 
 
@@ -192,8 +198,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
 	auto const hwnd = CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WINDOWED_STYLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, windowClass.hInstance, nullptr);
 	ShowWindow(hwnd, nCmdShow);
-
-	SwitchBorderlessState(hwnd);
 
 	auto* const appData = reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
