@@ -44,13 +44,13 @@ struct OffsetCBufData {
 
 
 namespace {
-	float constexpr static VERTEX_DATA[]{
+	float constexpr VERTEX_DATA[]{
 		-0.05f, 1.0f,
-		 0.05f, 1.0f,
-		 0.05f, -1.0f,
+		0.05f, 1.0f,
+		0.05f, -1.0f,
 		-0.05f, -1.0f
 	};
-	unsigned constexpr static INDEX_DATA[]{
+	unsigned constexpr INDEX_DATA[]{
 		0, 1, 2,
 		2, 3, 0
 	};
@@ -70,6 +70,24 @@ namespace {
 	UINT gSwapChainFlags{ 0 };
 	UINT gPresentFlags{ 0 };
 	FLOAT const* gObjectColor{ NO_OVERLAY_SUPPORT_COLOR };
+
+
+	auto CreateBackBufRTV(AppData& appData) -> void {
+		appData.backBufRtv.Reset();
+		appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, gSwapChainFlags);
+
+		ComPtr<ID3D11Texture2D> backBuf;
+		appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.ReleaseAndGetAddressOf()));
+
+		D3D11_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
+			.Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+			.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
+			.Texture2D = {
+				.MipSlice = 0
+			}
+		};
+		appData.d3dDevice->CreateRenderTargetView(backBuf.Get(), &rtvDesc, appData.backBufRtv.ReleaseAndGetAddressOf());
+	}
 
 
 	auto SwitchBorderlessState(HWND const hwnd) -> void {
@@ -123,11 +141,7 @@ namespace {
 				auto const height = HIWORD(lparam);
 				if (width && height) {
 					if (appData->swapChain && appData->backBufRtv && appData->d3dDevice) {
-						appData->backBufRtv.Reset();
-						appData->swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, gSwapChainFlags);
-						ComPtr<ID3D11Texture2D> backBuf;
-						appData->swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuf.GetAddressOf()));
-						appData->d3dDevice->CreateRenderTargetView(backBuf.Get(), nullptr, appData->backBufRtv.GetAddressOf());
+						CreateBackBufRTV(*appData);
 					}
 					if (appData->immediateContext) {
 						D3D11_VIEWPORT const viewport{
@@ -209,6 +223,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	D3D_FEATURE_LEVEL constexpr featureLevels[]{ D3D_FEATURE_LEVEL_11_0 };
 	D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceFlags, featureLevels, 1, D3D11_SDK_VERSION, appData->d3dDevice.GetAddressOf(), nullptr, appData->immediateContext.GetAddressOf());
 
+#ifndef NDEBUG
+	appData->d3dDevice.As<ID3D11Debug>(&appData->debug);
+	ComPtr<ID3D11InfoQueue> infoQueue;
+	appData->debug.As<ID3D11InfoQueue>(&infoQueue);
+	infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
+	infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
+#endif
+
 	ComPtr<IDXGIDevice2> dxgiDevice2;
 	appData->d3dDevice.As(&dxgiDevice2);
 
@@ -216,11 +238,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	dxgiDevice2->GetAdapter(dxgiAdapter.GetAddressOf());
 
 	ComPtr<IDXGIFactory2> dxgiFactory2;
-	dxgiAdapter->GetParent(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(dxgiFactory2.GetAddressOf()));
+	dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory2.GetAddressOf()));
 
 	BOOL allowTearing{};
 
-	if (ComPtr<IDXGIFactory5> dxgiFactory5; SUCCEEDED(dxgiAdapter->GetParent(__uuidof(IDXGIFactory5), reinterpret_cast<void**>(dxgiFactory5.GetAddressOf())))) {
+	if (ComPtr<IDXGIFactory5> dxgiFactory5; SUCCEEDED(dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory5.GetAddressOf())))) {
 		dxgiFactory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof allowTearing);
 	}
 
@@ -250,6 +272,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	dxgiFactory2->CreateSwapChainForHwnd(appData->d3dDevice.Get(), hwnd, &swapChainDesc, nullptr, nullptr, appData->swapChain.ReleaseAndGetAddressOf());
 	dxgiFactory2->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
 
+	CreateBackBufRTV(*appData);
+
 	ComPtr<IDXGIOutput> output;
 	appData->swapChain->GetContainingOutput(output.GetAddressOf());
 	ComPtr<IDXGIOutput2> output2;
@@ -266,20 +290,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		OutputDebugStringW(std::format(L"Windowed hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? L"" : L"not ").c_str());
 	}
 
-#ifndef NDEBUG
-	appData->d3dDevice.As<ID3D11Debug>(&appData->debug);
-	ComPtr<ID3D11InfoQueue> infoQueue;
-	appData->debug.As<ID3D11InfoQueue>(&infoQueue);
-	infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
-	infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
-#endif
-
-	{
-		ComPtr<ID3D11Texture2D> backBuf;
-		appData->swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(backBuf.GetAddressOf()));
-		appData->d3dDevice->CreateRenderTargetView(backBuf.Get(), nullptr, appData->backBufRtv.ReleaseAndGetAddressOf());
-	}
-
 	ComPtr<ID3D11VertexShader> vertexShader;
 	appData->d3dDevice->CreateVertexShader(gVsBytes, ARRAYSIZE(gVsBytes), nullptr, vertexShader.GetAddressOf());
 
@@ -287,7 +297,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	appData->d3dDevice->CreatePixelShader(gPsBytes, ARRAYSIZE(gPsBytes), nullptr, pixelShader.GetAddressOf());
 
 	D3D11_INPUT_ELEMENT_DESC constexpr inputElementDesc{
-		.SemanticName = "POS" ,
+		.SemanticName = "POS",
 		.SemanticIndex = 0,
 		.Format = DXGI_FORMAT_R32G32_FLOAT,
 		.InputSlot = 0,
@@ -393,7 +403,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		appData->immediateContext->Map(appData->offsetCBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedOffsetCBuf);
 		auto* const offsetCBufData{ static_cast<OffsetCBufData*>(mappedOffsetCBuf.pData) };
 		auto const totalElapsedTimeSeconds{ std::chrono::duration<float>{ lastFrameTimePoint - startTimePoint }.count() / 6.f };
-		offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<int>(totalElapsedTimeSeconds) - 0.5f) - 0.25f) * 3.8f;
+		offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<float>(static_cast<int>(totalElapsedTimeSeconds)) - 0.5f) - 0.25f) * 3.8f;
 		appData->immediateContext->Unmap(appData->offsetCBuf.Get(), 0);
 
 		appData->immediateContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
