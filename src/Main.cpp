@@ -17,6 +17,8 @@
 #include <cmath>
 #include <format>
 
+#define USE_WAITABLE_SWAPCHAIN 1
+
 using Microsoft::WRL::ComPtr;
 
 
@@ -44,6 +46,7 @@ struct OffsetCBufData {
 
 
 namespace {
+	UINT constexpr NUM_FRAMES_IN_FLIGHT{ 1 };
 	float constexpr VERTEX_DATA[]{
 		-0.05f, 1.0f,
 		0.05f, 1.0f,
@@ -57,7 +60,7 @@ namespace {
 	UINT constexpr NUM_INDICES{ ARRAYSIZE(INDEX_DATA) };
 	UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
 	UINT constexpr VERTEX_OFFSET{ 0 };
-	auto constexpr MAX_FPS{ 60 };
+	auto constexpr MAX_FPS{ 0 };
 	auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) / MAX_FPS };
 	DWORD constexpr WINDOWED_STYLE{ WS_BORDER | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_OVERLAPPED | WS_SYSMENU };
 	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
@@ -253,6 +256,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		gPresentFlags |= DXGI_PRESENT_ALLOW_TEARING;
 	}
 
+#if USE_WAITABLE_SWAPCHAIN
+	gSwapChainFlags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+#endif
+
 	DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
 		.Width = 0,
 		.Height = 0,
@@ -271,6 +278,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	};
 	dxgiFactory2->CreateSwapChainForHwnd(appData->d3dDevice.Get(), hwnd, &swapChainDesc, nullptr, nullptr, appData->swapChain.ReleaseAndGetAddressOf());
 	dxgiFactory2->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
+
+
+#if USE_WAITABLE_SWAPCHAIN
+	ComPtr<IDXGISwapChain2> swapChain2;
+	appData->swapChain.As(&swapChain2);
+	auto const frameLatencyWaitableObject{ swapChain2->GetFrameLatencyWaitableObject() };
+	swapChain2->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
+#else
+	dxgiDevice2->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
+#endif
 
 	CreateBackBufRTV(*appData);
 
@@ -390,6 +407,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	auto deltaTime{ std::chrono::nanoseconds::zero() };
 
 	while (true) {
+#if USE_WAITABLE_SWAPCHAIN
+		WaitForSingleObjectEx(frameLatencyWaitableObject, 1000, true);
+#endif
+
 		MSG msg;
 		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
 			if (msg.message == WM_QUIT) {
@@ -408,7 +429,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
 		appData->immediateContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
 		appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
-		appData->immediateContext->DrawIndexed(NUM_INDICES, 0, 0);
+
+		for (int i = 0; i < 100; i++) {
+			appData->immediateContext->DrawIndexedInstanced(NUM_INDICES, 100, 0, 0, 0);
+		}
 
 		appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
 
