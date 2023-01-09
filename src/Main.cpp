@@ -41,6 +41,7 @@ struct AppData {
 	ComPtr<ID3D11Buffer> offsetCBuf;
 	bool minimizeOnFocusLoss{ false };
 	bool isBorderless{ false };
+	RECT windowedRect;
 };
 
 
@@ -69,8 +70,8 @@ namespace {
 	UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
 	UINT constexpr VERTEX_OFFSET{ 0 };
 	auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) / MAX_FPS };
-	DWORD constexpr WINDOWED_STYLE{ WS_BORDER | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_OVERLAPPED | WS_SYSMENU };
-	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
+	DWORD constexpr WINDOWED_STYLE{ WS_OVERLAPPEDWINDOW };
+	DWORD constexpr BORDERLESS_STYLE{ WS_OVERLAPPED };
 	FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
 	FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{ 0.16f, 0.67f, 0.53f, 1 };
 	FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.89f, 0.14f, 0.17f, 1 };
@@ -102,34 +103,27 @@ namespace {
 
 	auto SwitchBorderlessState(HWND const hwnd) -> void {
 		auto* const appData{ reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
-		appData->isBorderless = !appData->isBorderless;
 
-		MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
-		GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+		if (appData->isBorderless) {
+			SetWindowLongPtrW(hwnd, GWL_STYLE, WINDOWED_STYLE);
 
-		int width;
-		int height;
-
-		if (!appData->isBorderless) {
-			DWORD constexpr style{ WINDOWED_STYLE | WS_VISIBLE };
-			SetWindowLongPtrW(hwnd, GWL_STYLE, style);
-			RECT rect{
-				.left = 0,
-				.top = 0,
-				.right = 1280,
-				.bottom = 720
-			};
-			AdjustWindowRect(&rect, style & ~WS_SYSMENU, FALSE);
-			width = rect.right - rect.left;
-			height = rect.bottom - rect.top;
+			auto const width{ appData->windowedRect.right - appData->windowedRect.left};
+			auto const height{ appData->windowedRect.bottom - appData->windowedRect.top };
+			SetWindowPos(hwnd, nullptr, appData->windowedRect.left, appData->windowedRect.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 		}
 		else {
-			SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE | WS_VISIBLE);
-			width = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
-			height = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
+			GetWindowRect(hwnd, &appData->windowedRect);
+
+			SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
+
+			MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
+			GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+			auto const width{ monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left };
+			auto const height{ monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top };
+			SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 		}
 
-		SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED);
+		appData->isBorderless = !appData->isBorderless;
 	}
 
 
