@@ -1,7 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
-#include <d3d11.h>
+#include <d3d11_4.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
@@ -17,7 +17,16 @@
 #include <cmath>
 #include <format>
 
-#define USE_WAITABLE_SWAPCHAIN 1
+
+#define USE_WAITABLE_SWAPCHAIN 0
+#define USE_FENCE 1
+
+namespace {
+	auto constexpr MAX_FPS{ 0 };
+	UINT constexpr NUM_FRAMES_IN_FLIGHT{ 1 };
+	auto constexpr START_BORDERLESS{ true };
+}
+
 
 using Microsoft::WRL::ComPtr;
 
@@ -46,7 +55,6 @@ struct OffsetCBufData {
 
 
 namespace {
-	UINT constexpr NUM_FRAMES_IN_FLIGHT{ 1 };
 	float constexpr VERTEX_DATA[]{
 		-0.05f, 1.0f,
 		0.05f, 1.0f,
@@ -60,7 +68,6 @@ namespace {
 	UINT constexpr NUM_INDICES{ ARRAYSIZE(INDEX_DATA) };
 	UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
 	UINT constexpr VERTEX_OFFSET{ 0 };
-	auto constexpr MAX_FPS{ 0 };
 	auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) / MAX_FPS };
 	DWORD constexpr WINDOWED_STYLE{ WS_BORDER | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_OVERLAPPED | WS_SYSMENU };
 	DWORD constexpr BORDERLESS_STYLE{ WS_POPUP };
@@ -216,6 +223,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	auto const hwnd = CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WINDOWED_STYLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, windowClass.hInstance, nullptr);
 	ShowWindow(hwnd, nCmdShow);
 
+	if constexpr (START_BORDERLESS) {
+		SwitchBorderlessState(hwnd);
+	}
+
 	auto* const appData = reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
 	UINT deviceFlags = 0;
@@ -232,6 +243,20 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 	appData->debug.As<ID3D11InfoQueue>(&infoQueue);
 	infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
 	infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
+#endif
+
+#if USE_FENCE
+	ComPtr<ID3D11Device5> d3dDevice5;
+	appData->d3dDevice.As(&d3dDevice5);
+
+	ComPtr<ID3D11DeviceContext4> context4;
+	appData->immediateContext.As(&context4);
+
+	UINT64 fenceValue{ 0 };
+	auto const fenceEvent{ CreateEventW(nullptr, FALSE, FALSE, nullptr) };
+
+	ComPtr<ID3D11Fence> fence;
+	d3dDevice5->CreateFence(0, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
 #endif
 
 	ComPtr<IDXGIDevice2> dxgiDevice2;
@@ -435,6 +460,17 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 		}
 
 		appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
+
+#if USE_FENCE
+		auto const currentFenceValue{ fenceValue };
+		context4->Signal(fence.Get(), currentFenceValue);
+		++fenceValue;
+
+		if (fence->GetCompletedValue() < currentFenceValue) {
+			fence->SetEventOnCompletion(currentFenceValue, fenceEvent);
+			WaitForSingleObject(fenceEvent, INFINITE);
+		}
+#endif
 
 		do {
 			deltaTime = std::chrono::steady_clock::now() - lastFrameTimePoint;
