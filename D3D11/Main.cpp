@@ -6,11 +6,11 @@
 #include <wrl/client.h>
 
 #ifdef _NDEBUG
-#include "generated/VertexShader.h"
-#include "generated/PixelShader.h"
+#include "shaders/generated/VertexShader.h"
+#include "shaders/generated/PixelShader.h"
 #else
-#include "generated/VertexShaderDebug.h"
-#include "generated/PixelShaderDebug.h"
+#include "shaders/generated/VertexShaderDebug.h"
+#include "shaders/generated/PixelShaderDebug.h"
 #endif
 
 #include <chrono>
