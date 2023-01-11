@@ -6,7 +6,6 @@
 
 #include <stdexcept>
 #include <format>
-#include <string_view>
 #include <cstring>
 #include <vector>
 #include <memory>
@@ -24,11 +23,9 @@ using Microsoft::WRL::ComPtr;
 
 
 auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
-	switch (msg) {
-		case WM_CLOSE: {
-			PostQuitMessage(0);
-			return 0;
-		}
+	if (msg == WM_CLOSE) {
+		PostQuitMessage(0);
+		return 0;
 	}
 	return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
@@ -46,7 +43,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 			throw std::runtime_error{ "Failed to register window class." };
 		}
 
-		std::unique_ptr<std::remove_pointer_t<HWND>, decltype([](HWND const hwnd) { if (hwnd) DestroyWindow(hwnd); })> const hwnd{ CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WS_POPUP, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), nullptr, nullptr, hInstance, nullptr) };
+		std::unique_ptr<std::remove_pointer_t<HWND>, decltype([](HWND const hwnd) { if (hwnd) { DestroyWindow(hwnd); } })> const hwnd{ CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WS_POPUP, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), nullptr, nullptr, hInstance, nullptr) };
 
 		if (!hwnd) {
 			throw std::runtime_error{ "Failed to create window." };
@@ -257,7 +254,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 		}
 
 		UINT64 fenceValue{ 1 };
-		std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype([](HANDLE const handle) { if (handle) CloseHandle(handle); })> const fenceEvent{ CreateEventW(nullptr, FALSE, FALSE, nullptr) };
+		std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype([](HANDLE const handle) {
+			if (handle) {
+				CloseHandle(handle);
+			}
+		})> const fenceEvent{ CreateEventW(nullptr, FALSE, FALSE, nullptr) };
 		if (!fenceEvent) {
 			throw std::runtime_error{ "Failed to create fence event." };
 		}

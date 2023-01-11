@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <memory>
 #include <type_traits>
+#include <array>
 
 #ifndef NDEBUG
 #include "shaders/generated/VSBinDebug.h"
@@ -19,11 +20,9 @@ using Microsoft::WRL::ComPtr;
 
 
 auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
-	switch (msg) {
-		case WM_CLOSE: {
-			PostQuitMessage(0);
-			return 0;
-		}
+	if (msg == WM_CLOSE) {
+		PostQuitMessage(0);
+		return 0;
 	}
 
 	return DefWindowProcW(hwnd, msg, wparam, lparam);
@@ -56,8 +55,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NDEBUG
 		deviceCreationFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
-		auto constexpr featureLevel{ D3D_FEATURE_LEVEL_11_0 };
-		if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceCreationFlags, &featureLevel, 1, D3D11_SDK_VERSION, d3dDevice.GetAddressOf(), nullptr, d3dContext.GetAddressOf()))) {
+		if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceCreationFlags, std::array{ D3D_FEATURE_LEVEL_11_0 }.data(), 1, D3D11_SDK_VERSION, d3dDevice.GetAddressOf(), nullptr, d3dContext.GetAddressOf()))) {
 			throw std::runtime_error{ "Failed to create d3ddevice." };
 		}
 
@@ -147,7 +145,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 		}
 
 		using Vec2 = float[2];
-		Vec2 constexpr vertices[3]{ { 0, 0.5f }, { 0.5f, -0.5f }, { -0.5f, -0.5f } };
+		Vec2 constexpr static vertices[3]{ { 0, 0.5f }, { 0.5f, -0.5f }, { -0.5f, -0.5f } };
 
 		D3D11_BUFFER_DESC constexpr vertBufDesc{
 			.ByteWidth = sizeof vertices,
