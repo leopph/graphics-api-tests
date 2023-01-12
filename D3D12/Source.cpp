@@ -10,6 +10,7 @@
 #include <vector>
 #include <memory>
 #include <type_traits>
+#include <array>
 
 #ifndef NDEBUG
 #include "shaders/generated/VSBinDebug.h"
@@ -68,6 +69,25 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 		if (FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(d3dDevice.GetAddressOf())))) {
 			throw std::runtime_error{ "Failed to create d3d device." };
 		}
+
+#ifndef NDEBUG
+		ComPtr<ID3D12InfoQueue> infoQueue;
+		if (FAILED(d3dDevice.As(&infoQueue))) {
+			throw std::runtime_error{ "Failed to get info queue." };
+		}
+
+		if (FAILED(infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE))) {
+			throw std::runtime_error{ "Failed to set break on d3d12 debug warning messages." };
+		}
+
+		if (FAILED(infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE))) {
+			throw std::runtime_error{ "Failed to set break on d3d12 debug error messages." };
+		}
+
+		if (FAILED(infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE))) {
+			throw std::runtime_error{ "Failed to set break on d3d12 debug corruption messages." };
+		}
+#endif
 
 		D3D12_COMMAND_QUEUE_DESC constexpr commandQueueDesc{
 			.Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -221,44 +241,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 			throw std::runtime_error{ "Failed to close command list." };
 		}
 
-		using Vec2 = float[2];
-		Vec2 constexpr vertices[3]{ { 0, 0.5f }, { 0.5f, -0.5f }, { -0.5f, -0.5f } };
-
-		CD3DX12_HEAP_PROPERTIES const vertBufHeapProps{ D3D12_HEAP_TYPE_UPLOAD };
-		auto const verBufResDesc{ CD3DX12_RESOURCE_DESC::Buffer(sizeof vertices) };
-
-		ComPtr<ID3D12Resource> vertexBuffer;
-		if (FAILED(d3dDevice->CreateCommittedResource(&vertBufHeapProps, D3D12_HEAP_FLAG_NONE, &verBufResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(vertexBuffer.GetAddressOf())))) {
-			throw std::runtime_error{ "Failed to create vertex buffer." };
-		}
-
-		D3D12_RANGE constexpr range{ 0, 0 };
-		void* mappedVertexBuffer;
-
-		if (FAILED(vertexBuffer->Map(0, &range, &mappedVertexBuffer))) {
-			throw std::runtime_error{ "Failed to map vertex buffer." };
-		}
-
-		std::memcpy(mappedVertexBuffer, vertices, sizeof vertices);
-		vertexBuffer->Unmap(0, nullptr);
-
-		D3D12_VERTEX_BUFFER_VIEW const vertexBufferView{
-			.BufferLocation = vertexBuffer->GetGPUVirtualAddress(),
-			.SizeInBytes = sizeof vertices,
-			.StrideInBytes = sizeof(Vec2)
-		};
-
 		ComPtr<ID3D12Fence> fence;
 		if (FAILED(d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf())))) {
 			throw std::runtime_error{ "Failed to create fence." };
 		}
 
 		UINT64 fenceValue{ 1 };
-		std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype([](HANDLE const handle) {
-			if (handle) {
-				CloseHandle(handle);
-			}
-		})> const fenceEvent{ CreateEventW(nullptr, FALSE, FALSE, nullptr) };
+		std::unique_ptr<std::remove_pointer_t<HANDLE>, decltype([](HANDLE const handle) { if (handle) { CloseHandle(handle); } })> const fenceEvent{ CreateEventW(nullptr, FALSE, FALSE, nullptr) };
 		if (!fenceEvent) {
 			throw std::runtime_error{ "Failed to create fence event." };
 		}
@@ -284,7 +273,57 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 			}
 		};
 
-		waitForGpu();
+		using Vec2 = float[2];
+		Vec2 constexpr static vertices[3]{ { 0, 0.5f }, { 0.5f, -0.5f }, { -0.5f, -0.5f } };
+
+		CD3DX12_HEAP_PROPERTIES const vertBufHeapProps{ D3D12_HEAP_TYPE_DEFAULT };
+		auto const vertBufResDesc{ CD3DX12_RESOURCE_DESC::Buffer(sizeof vertices) };
+
+		ComPtr<ID3D12Resource> vertexBuffer;
+		if (FAILED(d3dDevice->CreateCommittedResource(&vertBufHeapProps, D3D12_HEAP_FLAG_NONE, &vertBufResDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(vertexBuffer.GetAddressOf())))) {
+			throw std::runtime_error{ "Failed to create vertex buffer." };
+		}
+
+		{
+			CD3DX12_HEAP_PROPERTIES const vertUploadBufHeapProps{ D3D12_HEAP_TYPE_UPLOAD };
+
+			ComPtr<ID3D12Resource> vertexUploadBuffer;
+			if (FAILED(d3dDevice->CreateCommittedResource(&vertUploadBufHeapProps, D3D12_HEAP_FLAG_NONE, &vertBufResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(vertexUploadBuffer.GetAddressOf())))) {
+				throw std::runtime_error{ "Failed to create vertex upload buffer." };
+			}
+
+			D3D12_RANGE constexpr range{ 0, 0 };
+			void* mappedVertexUploadBuffer;
+
+			if (FAILED(vertexUploadBuffer->Map(0, &range, &mappedVertexUploadBuffer))) {
+				throw std::runtime_error{ "Failed to map vertex upload buffer." };
+			}
+
+			std::memcpy(mappedVertexUploadBuffer, vertices, sizeof vertices);
+			vertexUploadBuffer->Unmap(0, nullptr);
+
+			if (FAILED(commandList->Reset(commandAllocator.Get(), pso.Get()))) {
+				throw std::runtime_error{ "Failed to reset command list before copying vertex buffer data." };
+			}
+
+			commandList->CopyResource(vertexBuffer.Get(), vertexUploadBuffer.Get());
+
+			auto const uploadBarrier{ CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER) };
+			commandList->ResourceBarrier(1, &uploadBarrier);
+
+			if (FAILED(commandList->Close())) {
+				throw std::runtime_error{ "Failed to close command list before copying vertex buffer data." };
+			}
+
+			commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{ commandList.Get() }.data());
+			waitForGpu();
+		}
+
+		D3D12_VERTEX_BUFFER_VIEW const vertexBufferView{
+			.BufferLocation = vertexBuffer->GetGPUVirtualAddress(),
+			.SizeInBytes = sizeof vertices,
+			.StrideInBytes = sizeof(Vec2)
+		};
 
 		while (true) {
 			MSG msg;
