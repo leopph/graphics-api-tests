@@ -59,6 +59,25 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 			throw std::runtime_error{ "Failed to create d3ddevice." };
 		}
 
+#ifndef NDEBUG
+		ComPtr<ID3D11InfoQueue> infoQueue;
+		if (FAILED(d3dDevice.As(&infoQueue))) {
+			throw std::runtime_error{ "Failed to get info queue." };
+		}
+
+		if (FAILED(infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, TRUE))) {
+			throw std::runtime_error{ "Failed to set break on d3d11 debug warning messages." };
+		}
+
+		if (FAILED(infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE))) {
+			throw std::runtime_error{ "Failed to set break on d3d11 debug error messages." };
+		}
+
+		if (FAILED(infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE))) {
+			throw std::runtime_error{ "Failed to set break on d3d11 debug corruption messages." };
+		}
+#endif
+
 		ComPtr<IDXGIDevice4> dxgiDevice4;
 		if (FAILED(d3dDevice.As(&dxgiDevice4))) {
 			throw std::runtime_error{ "Failed to get dxgidevice4." };
