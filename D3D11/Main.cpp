@@ -31,15 +31,6 @@ enum class DisplayMode {
 };
 
 
-namespace {
-auto constexpr MAX_FPS{ 141 };
-UINT constexpr NUM_FRAMES_IN_FLIGHT{ 2 };
-auto constexpr DEFAULT_DISPLAY_MODE{ DisplayMode::ExclusiveFullscreen };
-auto constexpr NUM_DRAW_CALLS_PER_FRAME{ 1 };
-auto constexpr NUM_INSTANCES_PER_DRAW_CALL{ 1 };
-}
-
-
 struct AppData {
   ComPtr<ID3D11Device> d3dDevice;
   ComPtr<ID3D11DeviceContext> immediateContext;
@@ -48,10 +39,14 @@ struct AppData {
   ComPtr<ID3D11RenderTargetView> backBufRtv;
   ComPtr<ID3D11Buffer> colorCBuf;
   ComPtr<ID3D11Buffer> offsetCBuf;
-  bool minimizeBorderlessOnFocusLoss{ false };
+
   DisplayMode displayMode{ DisplayMode::Windowed };
+  bool minimizeBorderlessOnFocusLoss{ false };
   RECT windowedRect;
+
   bool allowTearing{ false };
+  bool supportsMultiplaneOverlays{ false };
+
   UINT syncInterval{ 0 };
   UINT swapChainFlags{ 0 };
   UINT presentFlags{ 0 };
@@ -69,6 +64,12 @@ struct OffsetCBufData {
 
 
 namespace {
+auto constexpr MAX_FPS{ 141 };
+UINT constexpr NUM_FRAMES_IN_FLIGHT{ 2 };
+auto constexpr DEFAULT_DISPLAY_MODE{ DisplayMode::ExclusiveFullscreen };
+auto constexpr NUM_DRAW_CALLS_PER_FRAME{ 1 };
+auto constexpr NUM_INSTANCES_PER_DRAW_CALL{ 1 };
+
 float constexpr VERTEX_DATA[]{
   -0.05f, 1.0f,
   0.05f, 1.0f,
@@ -97,8 +98,6 @@ DWORD constexpr BORDERLESS_STYLE{ WS_OVERLAPPED };
 FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
 FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{ 0.16f, 0.67f, 0.53f, 1 };
 FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.89f, 0.14f, 0.17f, 1 };
-
-FLOAT const* gObjectColor{ NO_OVERLAY_SUPPORT_COLOR };
 
 
 auto RecreateSwapChainRTV(AppData& appData) -> void {
@@ -360,20 +359,17 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
   RecreateSwapChainRTV(*appData);
 
-  ComPtr<IDXGIOutput> output;
-  appData->swapChain->GetContainingOutput(output.GetAddressOf());
-  ComPtr<IDXGIOutput2> output2;
-  output.As(&output2);
-  if (output2 && output2->SupportsOverlays()) {
-    gObjectColor = OVERLAY_SUPPORT_COLOR;
-  }
-  ComPtr<IDXGIOutput6> output6;
-  output.As(&output6);
-  if (output6) {
-    UINT supportFlags;
-    output6->CheckHardwareCompositionSupport(&supportFlags);
-    OutputDebugStringW(std::format(L"Fullscreen hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? L"" : L"not ").c_str());
-    OutputDebugStringW(std::format(L"Windowed hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? L"" : L"not ").c_str());
+  if (ComPtr<IDXGIOutput> output; SUCCEEDED(appData->swapChain->GetContainingOutput(output.GetAddressOf()))) {
+    if (ComPtr<IDXGIOutput2> output2; SUCCEEDED(output.As(&output2))) {
+      appData->supportsMultiplaneOverlays = output2->SupportsOverlays();
+    }
+
+    if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
+      if (UINT supportFlags; SUCCEEDED(output6->CheckHardwareCompositionSupport(&supportFlags))) {
+        OutputDebugStringW(std::format(L"Fullscreen hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? L"" : L"not ").c_str());
+        OutputDebugStringW(std::format(L"Windowed hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? L"" : L"not ").c_str());
+      }
+    }
   }
 
   ChangeDisplayMode(hwnd, DEFAULT_DISPLAY_MODE);
@@ -437,7 +433,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .StructureByteStride = 0
   };
   D3D11_SUBRESOURCE_DATA const colorCBufData{
-    .pSysMem = gObjectColor,
+    .pSysMem = appData->supportsMultiplaneOverlays ? OVERLAY_SUPPORT_COLOR : NO_OVERLAY_SUPPORT_COLOR,
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
   };
