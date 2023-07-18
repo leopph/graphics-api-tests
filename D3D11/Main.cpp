@@ -17,21 +17,27 @@
 #include <cmath>
 #include <format>
 
+using Microsoft::WRL::ComPtr;
+
 
 #define USE_WAITABLE_SWAPCHAIN 0
 #define USE_FENCE 0
 
 
+enum class DisplayMode {
+  ExclusiveFullscreen,
+  WindowedBorderless,
+  Windowed
+};
+
+
 namespace {
-auto constexpr MAX_FPS{ 0 };
+auto constexpr MAX_FPS{ 141 };
 UINT constexpr NUM_FRAMES_IN_FLIGHT{ 2 };
-auto constexpr START_BORDERLESS{ true };
+auto constexpr DEFAULT_DISPLAY_MODE{ DisplayMode::ExclusiveFullscreen };
 auto constexpr NUM_DRAW_CALLS_PER_FRAME{ 1 };
 auto constexpr NUM_INSTANCES_PER_DRAW_CALL{ 1 };
 }
-
-
-using Microsoft::WRL::ComPtr;
 
 
 struct AppData {
@@ -42,9 +48,13 @@ struct AppData {
   ComPtr<ID3D11RenderTargetView> backBufRtv;
   ComPtr<ID3D11Buffer> colorCBuf;
   ComPtr<ID3D11Buffer> offsetCBuf;
-  bool minimizeOnFocusLoss{ false };
-  bool isBorderless{ false };
+  bool minimizeBorderlessOnFocusLoss{ false };
+  DisplayMode displayMode{ DisplayMode::Windowed };
   RECT windowedRect;
+  bool allowTearing{ false };
+  UINT syncInterval{ 0 };
+  UINT swapChainFlags{ 0 };
+  UINT presentFlags{ 0 };
 };
 
 
@@ -72,24 +82,26 @@ unsigned constexpr INDEX_DATA[]{
 UINT constexpr NUM_INDICES{ ARRAYSIZE(INDEX_DATA) };
 UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
 UINT constexpr VERTEX_OFFSET{ 0 };
-auto constexpr MIN_FRAME_TIME{ MAX_FPS <= 0 ? std::chrono::nanoseconds::zero() : std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) / MAX_FPS };
+auto constexpr MIN_FRAME_TIME{
+  [] {
+    if constexpr (MAX_FPS <= 0) {
+      return std::chrono::nanoseconds::zero();
+    } else {
+      auto constexpr secondInNanos{ std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) };
+      return std::chrono::nanoseconds{ (secondInNanos.count() + MAX_FPS - 1) / MAX_FPS };
+    }
+  }()
+};
 DWORD constexpr WINDOWED_STYLE{ WS_OVERLAPPEDWINDOW };
 DWORD constexpr BORDERLESS_STYLE{ WS_OVERLAPPED };
 FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
 FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{ 0.16f, 0.67f, 0.53f, 1 };
 FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.89f, 0.14f, 0.17f, 1 };
 
-
-UINT gSyncInterval{ 0 };
-UINT gSwapChainFlags{ 0 };
-UINT gPresentFlags{ 0 };
 FLOAT const* gObjectColor{ NO_OVERLAY_SUPPORT_COLOR };
 
 
-auto CreateBackBufRTV(AppData& appData) -> void {
-  appData.backBufRtv.Reset();
-  appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, gSwapChainFlags);
-
+auto RecreateSwapChainRTV(AppData& appData) -> void {
   ComPtr<ID3D11Texture2D> backBuf;
   appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.ReleaseAndGetAddressOf()));
 
@@ -104,29 +116,48 @@ auto CreateBackBufRTV(AppData& appData) -> void {
 }
 
 
-auto SwitchBorderlessState(HWND const hwnd) -> void {
+auto ResizeSwapChain(AppData& appData) -> void {
+  appData.backBufRtv.Reset();
+  appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, appData.swapChainFlags);
+  RecreateSwapChainRTV(appData);
+}
+
+
+auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
   auto* const appData{ reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+  appData->displayMode = displayMode;
 
-  if (appData->isBorderless) {
-    SetWindowLongPtrW(hwnd, GWL_STYLE, WINDOWED_STYLE);
+  switch (displayMode) {
+    case DisplayMode::ExclusiveFullscreen: {
+      appData->swapChain->SetFullscreenState(true, nullptr);
+      appData->presentFlags &= ~DXGI_PRESENT_ALLOW_TEARING;
+      break;
+    }
 
-    auto const width{ appData->windowedRect.right - appData->windowedRect.left };
-    auto const height{ appData->windowedRect.bottom - appData->windowedRect.top };
-    SetWindowPos(hwnd, nullptr, appData->windowedRect.left, appData->windowedRect.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    case DisplayMode::WindowedBorderless: {
+      appData->swapChain->SetFullscreenState(false, nullptr);
+      if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
+      GetWindowRect(hwnd, &appData->windowedRect);
+      SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
+      MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
+      GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+      auto const width{ monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left };
+      auto const height{ monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top };
+      SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+      break;
+    }
+
+    case DisplayMode::Windowed: {
+      appData->swapChain->SetFullscreenState(false, nullptr);
+      if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
+      SetWindowLongPtrW(hwnd, GWL_STYLE, WINDOWED_STYLE);
+      auto const width{ appData->windowedRect.right - appData->windowedRect.left };
+      auto const height{ appData->windowedRect.bottom - appData->windowedRect.top };
+      SetWindowPos(hwnd, nullptr, appData->windowedRect.left, appData->windowedRect.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    }
   }
-  else {
-    GetWindowRect(hwnd, &appData->windowedRect);
 
-    SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
-
-    MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
-    GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
-    auto const width{ monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left };
-    auto const height{ monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top };
-    SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-  }
-
-  appData->isBorderless = !appData->isBorderless;
+  ResizeSwapChain(*appData);
 }
 
 
@@ -139,17 +170,22 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(appData));
       return 0;
     }
+
     case WM_DESTROY: {
+      appData->swapChain->SetFullscreenState(false, nullptr);
       delete appData;
       return 0;
     }
+
     case WM_SIZE: {
       auto const width = LOWORD(lparam);
       auto const height = HIWORD(lparam);
+
       if (width && height) {
         if (appData->swapChain && appData->backBufRtv && appData->d3dDevice) {
-          CreateBackBufRTV(*appData);
+          ResizeSwapChain(*appData);
         }
+
         if (appData->immediateContext) {
           D3D11_VIEWPORT const viewport{
             .TopLeftX = 0,
@@ -162,45 +198,54 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
           appData->immediateContext->RSSetViewports(1, &viewport);
         }
       }
+
       return 0;
     }
-    case WM_SYSKEYDOWN: {
-      if (wparam == VK_RETURN && (lparam & 0x60000000) == 0x20000000) {
-        SwitchBorderlessState(hwnd);
-        return 0;
-      }
-      break;
-    }
+
     case WM_SYSCOMMAND: {
       if (wparam == SC_KEYMENU) {
         return 0;
       }
+
       break;
     }
+
     case WM_KEYDOWN: {
-      if (wparam == 0x4D && !(lparam & 0x40000000)) {
-        appData->minimizeOnFocusLoss = !appData->minimizeOnFocusLoss;
-        return 0;
+      auto const keyFlags{ HIWORD(lparam) };
+
+      if (!(keyFlags & KF_REPEAT)) {
+        if (wparam == 'F') {
+          ChangeDisplayMode(hwnd, DisplayMode::ExclusiveFullscreen);
+        } else if (wparam == 'B') {
+          ChangeDisplayMode(hwnd, DisplayMode::WindowedBorderless);
+        } else if (wparam == 'W') {
+          ChangeDisplayMode(hwnd, DisplayMode::Windowed);
+        } else if (wparam == 'M') {
+          appData->minimizeBorderlessOnFocusLoss = !appData->minimizeBorderlessOnFocusLoss;
+        }
       }
-      if (wparam == 0x46 && !(lparam & 0x40000000)) {
-        SwitchBorderlessState(hwnd);
-        return 0;
-      }
+
       break;
     }
+
     case WM_ACTIVATEAPP: {
-      if (appData->isBorderless && appData->minimizeOnFocusLoss && wparam == FALSE) {
+      if (wparam == TRUE && appData->displayMode == DisplayMode::ExclusiveFullscreen) {
+        ChangeDisplayMode(hwnd, DisplayMode::ExclusiveFullscreen);
+      } else if (wparam == FALSE && appData->displayMode == DisplayMode::WindowedBorderless && appData->minimizeBorderlessOnFocusLoss) {
         ShowWindow(hwnd, SW_MINIMIZE);
         return 0;
       }
+
       break;
     }
+
     case WM_CLOSE: {
       DestroyWindow(hwnd);
       PostQuitMessage(0);
       return 0;
     }
   }
+
   return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 }
@@ -219,10 +264,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
   auto const hwnd = CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WINDOWED_STYLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, windowClass.hInstance, nullptr);
   ShowWindow(hwnd, nCmdShow);
-
-  if constexpr (START_BORDERLESS) {
-    SwitchBorderlessState(hwnd);
-  }
 
   auto* const appData = reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
@@ -273,9 +314,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
   OutputDebugStringW(std::format(L"Tearing in windowed mode is {}supported.\r\n", allowTearing ? L"" : L"not ").c_str());
 
+  appData->allowTearing = allowTearing;
+
   if (allowTearing) {
-    gSwapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
-    gPresentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+    appData->swapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+    appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
   }
 
 #if USE_WAITABLE_SWAPCHAIN
@@ -296,7 +339,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .Scaling = DXGI_SCALING_STRETCH,
     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
     .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-    .Flags = gSwapChainFlags
+    .Flags = appData->swapChainFlags
   };
   dxgiFactory2->CreateSwapChainForHwnd(appData->d3dDevice.Get(), hwnd, &swapChainDesc, nullptr, nullptr, appData->swapChain.ReleaseAndGetAddressOf());
   dxgiFactory2->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
@@ -311,7 +354,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   dxgiDevice2->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
 #endif
 
-  CreateBackBufRTV(*appData);
+  RecreateSwapChainRTV(*appData);
 
   ComPtr<IDXGIOutput> output;
   appData->swapChain->GetContainingOutput(output.GetAddressOf());
@@ -328,6 +371,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     OutputDebugStringW(std::format(L"Fullscreen hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? L"" : L"not ").c_str());
     OutputDebugStringW(std::format(L"Windowed hardware composition is {}supported.\r\n", supportFlags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? L"" : L"not ").c_str());
   }
+
+  ChangeDisplayMode(hwnd, DEFAULT_DISPLAY_MODE);
 
   ComPtr<ID3D11VertexShader> vertexShader;
   appData->d3dDevice->CreateVertexShader(gVsBytes, ARRAYSIZE(gVsBytes), nullptr, vertexShader.GetAddressOf());
@@ -456,7 +501,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
       appData->immediateContext->DrawIndexedInstanced(NUM_INDICES, NUM_INSTANCES_PER_DRAW_CALL, 0, 0, 0);
     }
 
-    appData->swapChain->Present(gSyncInterval, gSyncInterval == 0 ? gPresentFlags : gPresentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
+    appData->swapChain->Present(appData->syncInterval, appData->syncInterval == 0 ? appData->presentFlags : appData->presentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
 
 #if USE_FENCE
 		auto const currentFenceValue{ fenceValue };
@@ -471,8 +516,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
     do {
       deltaTime = std::chrono::steady_clock::now() - lastFrameTimePoint;
-    }
-    while (deltaTime < MIN_FRAME_TIME);
+    } while (deltaTime < MIN_FRAME_TIME);
 
     lastFrameTimePoint += deltaTime;
   }
