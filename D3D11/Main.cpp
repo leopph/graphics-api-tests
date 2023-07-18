@@ -125,6 +125,11 @@ auto ResizeSwapChain(AppData& appData) -> void {
 
 auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
   auto* const appData{ reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+
+  if (appData->displayMode == DisplayMode::Windowed) {
+    GetWindowRect(hwnd, &appData->windowedRect);
+  }
+
   appData->displayMode = displayMode;
 
   switch (displayMode) {
@@ -137,7 +142,6 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
     case DisplayMode::WindowedBorderless: {
       appData->swapChain->SetFullscreenState(false, nullptr);
       if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
-      GetWindowRect(hwnd, &appData->windowedRect);
       SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
       MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
       GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
