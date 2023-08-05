@@ -13,6 +13,7 @@
 #include "shaders/generated/PixelShaderDebug.h"
 #endif
 
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -20,8 +21,8 @@
 using Microsoft::WRL::ComPtr;
 
 
-#define USE_WAITABLE_SWAPCHAIN 0
-#define USE_FENCE 0
+#define USE_WAITABLE_SWAPCHAIN 1
+#define USE_FENCE 1
 
 
 enum class DisplayMode {
@@ -32,24 +33,20 @@ enum class DisplayMode {
 
 
 struct AppData {
-  ComPtr<ID3D11Device> d3dDevice;
-  ComPtr<ID3D11DeviceContext> immediateContext;
-  ComPtr<ID3D11Debug> debug;
-  ComPtr<IDXGISwapChain1> swapChain;
+  ComPtr<ID3D11Device5> d3dDevice;
+  ComPtr<IDXGISwapChain4> swapChain;
   ComPtr<ID3D11RenderTargetView> backBufRtv;
-  ComPtr<ID3D11Buffer> colorCBuf;
-  ComPtr<ID3D11Buffer> offsetCBuf;
 
-  DisplayMode displayMode{ DisplayMode::Windowed };
-  bool minimizeBorderlessOnFocusLoss{ false };
-  RECT windowedRect;
+  DisplayMode displayMode{DisplayMode::Windowed};
+  bool minimizeBorderlessOnFocusLoss{false};
+  RECT windowedRect{};
 
-  bool allowTearing{ false };
-  bool supportsMultiplaneOverlays{ false };
+  bool allowTearing{false};
+  bool supportsMultiplaneOverlays{false};
 
-  UINT syncInterval{ 0 };
-  UINT swapChainFlags{ 0 };
-  UINT presentFlags{ 0 };
+  UINT syncInterval{0};
+  UINT swapChainFlags{0};
+  UINT presentFlags{0};
 };
 
 
@@ -64,11 +61,11 @@ struct OffsetCBufData {
 
 
 namespace {
-auto constexpr MAX_FPS{ 141 };
-UINT constexpr NUM_FRAMES_IN_FLIGHT{ 2 };
-auto constexpr DEFAULT_DISPLAY_MODE{ DisplayMode::ExclusiveFullscreen };
-auto constexpr NUM_DRAW_CALLS_PER_FRAME{ 1 };
-auto constexpr NUM_INSTANCES_PER_DRAW_CALL{ 1 };
+auto constexpr MAX_FPS{141};
+UINT constexpr NUM_FRAMES_IN_FLIGHT{2};
+auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::Windowed};
+auto constexpr NUM_DRAW_CALLS_PER_FRAME{1};
+auto constexpr NUM_INSTANCES_PER_DRAW_CALL{1};
 
 float constexpr VERTEX_DATA[]{
   -0.05f, 1.0f,
@@ -80,24 +77,24 @@ unsigned constexpr INDEX_DATA[]{
   0, 1, 2,
   2, 3, 0
 };
-UINT constexpr NUM_INDICES{ ARRAYSIZE(INDEX_DATA) };
-UINT constexpr VERTEX_STRIDE{ 2 * sizeof(float) };
-UINT constexpr VERTEX_OFFSET{ 0 };
+UINT constexpr NUM_INDICES{ARRAYSIZE(INDEX_DATA)};
+UINT constexpr VERTEX_STRIDE{2 * sizeof(float)};
+UINT constexpr VERTEX_OFFSET{0};
 auto constexpr MIN_FRAME_TIME{
   [] {
     if constexpr (MAX_FPS <= 0) {
       return std::chrono::nanoseconds::zero();
     } else {
-      auto constexpr secondInNanos{ std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{ 1 }) };
-      return std::chrono::nanoseconds{ (secondInNanos.count() + MAX_FPS - 1) / MAX_FPS };
+      auto constexpr secondInNanos{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1})};
+      return std::chrono::nanoseconds{(secondInNanos.count() + MAX_FPS - 1) / MAX_FPS};
     }
   }()
 };
-DWORD constexpr WINDOWED_STYLE{ WS_OVERLAPPEDWINDOW };
-DWORD constexpr BORDERLESS_STYLE{ WS_OVERLAPPED };
-FLOAT constexpr CLEAR_COLOR[]{ 0.21f, 0.27f, 0.31f, 1 };
-FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{ 0.16f, 0.67f, 0.53f, 1 };
-FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{ 0.89f, 0.14f, 0.17f, 1 };
+DWORD constexpr WINDOWED_STYLE{WS_OVERLAPPEDWINDOW};
+DWORD constexpr BORDERLESS_STYLE{WS_OVERLAPPED};
+FLOAT constexpr CLEAR_COLOR[]{0.21f, 0.27f, 0.31f, 1};
+FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{0.16f, 0.67f, 0.53f, 1};
+FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{0.89f, 0.14f, 0.17f, 1};
 
 
 auto RecreateSwapChainRTV(AppData& appData) -> void {
@@ -123,7 +120,7 @@ auto ResizeSwapChain(AppData& appData) -> void {
 
 
 auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
-  auto* const appData{ reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+  auto* const appData{reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA))};
 
   if (appData->displayMode == DisplayMode::Windowed) {
     GetWindowRect(hwnd, &appData->windowedRect);
@@ -142,10 +139,10 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
       appData->swapChain->SetFullscreenState(false, nullptr);
       if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
       SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
-      MONITORINFO monitorInfo{ .cbSize = sizeof(MONITORINFO) };
+      MONITORINFO monitorInfo{.cbSize = sizeof(MONITORINFO)};
       GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
-      auto const width{ monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left };
-      auto const height{ monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top };
+      auto const width{monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left};
+      auto const height{monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top};
       SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
       break;
     }
@@ -154,8 +151,8 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
       appData->swapChain->SetFullscreenState(false, nullptr);
       if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
       SetWindowLongPtrW(hwnd, GWL_STYLE, WINDOWED_STYLE);
-      auto const width{ appData->windowedRect.right - appData->windowedRect.left };
-      auto const height{ appData->windowedRect.bottom - appData->windowedRect.top };
+      auto const width{appData->windowedRect.right - appData->windowedRect.left};
+      auto const height{appData->windowedRect.bottom - appData->windowedRect.top};
       SetWindowPos(hwnd, nullptr, appData->windowedRect.left, appData->windowedRect.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     }
   }
@@ -188,18 +185,6 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
         if (appData->swapChain && appData->backBufRtv && appData->d3dDevice) {
           ResizeSwapChain(*appData);
         }
-
-        if (appData->immediateContext) {
-          D3D11_VIEWPORT const viewport{
-            .TopLeftX = 0,
-            .TopLeftY = 0,
-            .Width = static_cast<FLOAT>(width),
-            .Height = static_cast<FLOAT>(height),
-            .MinDepth = 0,
-            .MaxDepth = 1
-          };
-          appData->immediateContext->RSSetViewports(1, &viewport);
-        }
       }
 
       return 0;
@@ -214,7 +199,7 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
     }
 
     case WM_KEYDOWN: {
-      auto const keyFlags{ HIWORD(lparam) };
+      auto const keyFlags{HIWORD(lparam)};
 
       if (!(keyFlags & KF_REPEAT)) {
         if (wparam == 'F') {
@@ -275,45 +260,73 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
-  D3D_FEATURE_LEVEL constexpr featureLevels[]{ D3D_FEATURE_LEVEL_11_0 };
-  D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceFlags, featureLevels, 1, D3D11_SDK_VERSION, appData->d3dDevice.GetAddressOf(), nullptr, appData->immediateContext.GetAddressOf());
+  HRESULT hr{};
+  ComPtr<ID3D11DeviceContext4> imCtx;
+
+  {
+    ComPtr<ID3D11Device> tmpD3dDevice;
+    ComPtr<ID3D11DeviceContext> tmpImCtx;
+
+    D3D_FEATURE_LEVEL constexpr featureLevels[]{D3D_FEATURE_LEVEL_11_0};
+    hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, deviceFlags, featureLevels, 1, D3D11_SDK_VERSION, tmpD3dDevice.GetAddressOf(), nullptr, tmpImCtx.GetAddressOf());
+    assert(SUCCEEDED(hr));
+
+    hr = tmpD3dDevice.As(&appData->d3dDevice);
+    assert(SUCCEEDED(hr));
+    hr = tmpImCtx.As(&imCtx);
+    assert(SUCCEEDED(hr));
+  }
+
 
 #ifndef NDEBUG
-  appData->d3dDevice.As<ID3D11Debug>(&appData->debug);
-  ComPtr<ID3D11InfoQueue> infoQueue;
-  appData->debug.As<ID3D11InfoQueue>(&infoQueue);
-  infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
-  infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
+  {
+    ComPtr<ID3D11Debug> debug;
+    hr = appData->d3dDevice.As<ID3D11Debug>(&debug);
+    assert(SUCCEEDED(hr));
+
+    ComPtr<ID3D11InfoQueue> infoQueue;
+    hr = debug.As<ID3D11InfoQueue>(&infoQueue);
+    assert(SUCCEEDED(hr));
+
+    hr = infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
+    assert(SUCCEEDED(hr));
+    hr = infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
+    assert(SUCCEEDED(hr));
+  }
+
 #endif
+  ComPtr<ID3D11DeviceContext4> dCtx;
+  {
+    ComPtr<ID3D11DeviceContext3> tmpDCtx;
+    hr = appData->d3dDevice->CreateDeferredContext3(0, tmpDCtx.GetAddressOf());
+    assert(SUCCEEDED(hr));
+
+    hr = tmpDCtx.As(&dCtx);
+    assert(SUCCEEDED(hr));
+  }
 
 #if USE_FENCE
-	ComPtr<ID3D11Device5> d3dDevice5;
-	appData->d3dDevice.As(&d3dDevice5);
-
-	ComPtr<ID3D11DeviceContext4> context4;
-	appData->immediateContext.As(&context4);
-
-	UINT64 fenceValue{ 0 };
-	auto const fenceEvent{ CreateEventW(nullptr, FALSE, FALSE, nullptr) };
-
-	ComPtr<ID3D11Fence> fence;
-	d3dDevice5->CreateFence(0, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
+  UINT64 fenceValue{0};
+  ComPtr<ID3D11Fence> fence;
+  hr = appData->d3dDevice->CreateFence(fenceValue, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
+  assert(SUCCEEDED(hr));
 #endif
 
-  ComPtr<IDXGIDevice2> dxgiDevice2;
-  appData->d3dDevice.As(&dxgiDevice2);
+  ComPtr<IDXGIDevice4> dxgiDevice;
+  hr = appData->d3dDevice.As(&dxgiDevice);
+  assert(SUCCEEDED(hr));
 
   ComPtr<IDXGIAdapter> dxgiAdapter;
-  dxgiDevice2->GetAdapter(dxgiAdapter.GetAddressOf());
+  hr = dxgiDevice->GetAdapter(dxgiAdapter.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
-  ComPtr<IDXGIFactory2> dxgiFactory2;
-  dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory2.GetAddressOf()));
+  ComPtr<IDXGIFactory6> dxgiFactory;
+  hr = dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory.GetAddressOf()));
+  assert(SUCCEEDED(hr));
 
   BOOL allowTearing{};
-
-  if (ComPtr<IDXGIFactory5> dxgiFactory5; SUCCEEDED(dxgiAdapter->GetParent(IID_PPV_ARGS(dxgiFactory5.GetAddressOf())))) {
-    dxgiFactory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof allowTearing);
-  }
+  hr = dxgiFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof allowTearing);
+  assert(SUCCEEDED(hr));
 
   OutputDebugStringW(std::format(L"Tearing in windowed mode is {}supported.\r\n", allowTearing ? L"" : L"not ").c_str());
 
@@ -325,36 +338,45 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   }
 
 #if USE_WAITABLE_SWAPCHAIN
-	gSwapChainFlags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+  appData->swapChainFlags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 #endif
 
-  DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
-    .Width = 0,
-    .Height = 0,
-    .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
-    .Stereo = FALSE,
-    .SampleDesc{
-      .Count = 1,
-      .Quality = 0
-    },
-    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-    .BufferCount = 2,
-    .Scaling = DXGI_SCALING_STRETCH,
-    .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-    .Flags = appData->swapChainFlags
-  };
-  dxgiFactory2->CreateSwapChainForHwnd(appData->d3dDevice.Get(), hwnd, &swapChainDesc, nullptr, nullptr, appData->swapChain.ReleaseAndGetAddressOf());
-  dxgiFactory2->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
+  {
+    DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
+      .Width = 0,
+      .Height = 0,
+      .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+      .Stereo = FALSE,
+      .SampleDesc{
+        .Count = 1,
+        .Quality = 0
+      },
+      .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+      .BufferCount = 2,
+      .Scaling = DXGI_SCALING_STRETCH,
+      .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
+      .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
+      .Flags = appData->swapChainFlags
+    };
 
+    ComPtr<IDXGISwapChain1> tmpSwapChain;
+    hr = dxgiFactory->CreateSwapChainForHwnd(appData->d3dDevice.Get(), hwnd, &swapChainDesc, nullptr, nullptr, tmpSwapChain.GetAddressOf());
+    assert(SUCCEEDED(hr));
+
+    hr = tmpSwapChain.As(&appData->swapChain);
+    assert(SUCCEEDED(hr));
+  }
+
+  hr = dxgiFactory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
+  assert(SUCCEEDED(hr));
 
 #if USE_WAITABLE_SWAPCHAIN
-	ComPtr<IDXGISwapChain2> swapChain2;
-	appData->swapChain.As(&swapChain2);
-	auto const frameLatencyWaitableObject{ swapChain2->GetFrameLatencyWaitableObject() };
-	swapChain2->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
+  auto const frameLatencyWaitableObject{appData->swapChain->GetFrameLatencyWaitableObject()};
+  hr = appData->swapChain->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
+  assert(SUCCEEDED(hr));
 #else
-  dxgiDevice2->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
+  hr = dxgiDevice->SetMaximumFrameLatency(NUM_FRAMES_IN_FLIGHT);
+  assert(SUCCEEDED(hr));
 #endif
 
   RecreateSwapChainRTV(*appData);
@@ -375,10 +397,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   ChangeDisplayMode(hwnd, DEFAULT_DISPLAY_MODE);
 
   ComPtr<ID3D11VertexShader> vertexShader;
-  appData->d3dDevice->CreateVertexShader(gVsBytes, ARRAYSIZE(gVsBytes), nullptr, vertexShader.GetAddressOf());
+  hr = appData->d3dDevice->CreateVertexShader(gVsBytes, ARRAYSIZE(gVsBytes), nullptr, vertexShader.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
   ComPtr<ID3D11PixelShader> pixelShader;
-  appData->d3dDevice->CreatePixelShader(gPsBytes, ARRAYSIZE(gPsBytes), nullptr, pixelShader.GetAddressOf());
+  hr = appData->d3dDevice->CreatePixelShader(gPsBytes, ARRAYSIZE(gPsBytes), nullptr, pixelShader.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
   D3D11_INPUT_ELEMENT_DESC constexpr inputElementDesc{
     .SemanticName = "POS",
@@ -389,8 +413,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA,
     .InstanceDataStepRate = 0
   };
+
   ComPtr<ID3D11InputLayout> inputLayout;
-  appData->d3dDevice->CreateInputLayout(&inputElementDesc, 1, gVsBytes, ARRAYSIZE(gVsBytes), inputLayout.GetAddressOf());
+  hr = appData->d3dDevice->CreateInputLayout(&inputElementDesc, 1, gVsBytes, ARRAYSIZE(gVsBytes), inputLayout.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
   D3D11_BUFFER_DESC constexpr vertexBufferDesc{
     .ByteWidth = sizeof VERTEX_DATA,
@@ -400,13 +426,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .MiscFlags = 0,
     .StructureByteStride = 0
   };
+
   D3D11_SUBRESOURCE_DATA constexpr vertexSubresourceData{
     .pSysMem = VERTEX_DATA,
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
   };
+
   ComPtr<ID3D11Buffer> vertexBuffer;
-  appData->d3dDevice->CreateBuffer(&vertexBufferDesc, &vertexSubresourceData, vertexBuffer.GetAddressOf());
+  hr = appData->d3dDevice->CreateBuffer(&vertexBufferDesc, &vertexSubresourceData, vertexBuffer.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
   D3D11_BUFFER_DESC constexpr indexBufferDesc{
     .ByteWidth = sizeof INDEX_DATA,
@@ -416,13 +445,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .MiscFlags = 0,
     .StructureByteStride = 0
   };
+
   D3D11_SUBRESOURCE_DATA constexpr subresourceData{
     .pSysMem = INDEX_DATA,
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
   };
+
   ComPtr<ID3D11Buffer> indexBuffer;
-  appData->d3dDevice->CreateBuffer(&indexBufferDesc, &subresourceData, indexBuffer.GetAddressOf());
+  hr = appData->d3dDevice->CreateBuffer(&indexBufferDesc, &subresourceData, indexBuffer.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
   D3D11_BUFFER_DESC constexpr colorCBufDesc{
     .ByteWidth = sizeof(ColorCBufData) + 16 - sizeof(ColorCBufData) % 16,
@@ -432,12 +464,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .MiscFlags = 0,
     .StructureByteStride = 0
   };
+
   D3D11_SUBRESOURCE_DATA const colorCBufData{
     .pSysMem = appData->supportsMultiplaneOverlays ? OVERLAY_SUPPORT_COLOR : NO_OVERLAY_SUPPORT_COLOR,
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
   };
-  appData->d3dDevice->CreateBuffer(&colorCBufDesc, &colorCBufData, appData->colorCBuf.GetAddressOf());
+
+  ComPtr<ID3D11Buffer> colorCBuf;
+  hr = appData->d3dDevice->CreateBuffer(&colorCBufDesc, &colorCBufData, colorCBuf.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
   D3D11_BUFFER_DESC constexpr offsetCBufDesc{
     .ByteWidth = sizeof(OffsetCBufData) + 16 - sizeof(OffsetCBufData) % 16,
@@ -447,35 +483,27 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     .MiscFlags = 0,
     .StructureByteStride = 0
   };
-  appData->d3dDevice->CreateBuffer(&offsetCBufDesc, nullptr, appData->offsetCBuf.GetAddressOf());
 
-  appData->immediateContext->VSSetShader(vertexShader.Get(), nullptr, 0);
-  appData->immediateContext->PSSetShader(pixelShader.Get(), nullptr, 0);
-  appData->immediateContext->IASetInputLayout(inputLayout.Get());
-  appData->immediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  appData->immediateContext->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
-  appData->immediateContext->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-  appData->immediateContext->VSSetConstantBuffers(0, 1, appData->offsetCBuf.GetAddressOf());
-  appData->immediateContext->PSSetConstantBuffers(0, 1, appData->colorCBuf.GetAddressOf());
-  RECT clientRect;
-  GetClientRect(hwnd, &clientRect);
-  D3D11_VIEWPORT const viewport{
-    .TopLeftX = 0,
-    .TopLeftY = 0,
-    .Width = static_cast<FLOAT>(clientRect.right - clientRect.left),
-    .Height = static_cast<FLOAT>(clientRect.bottom - clientRect.top),
-    .MinDepth = 0,
-    .MaxDepth = 1
-  };
-  appData->immediateContext->RSSetViewports(1, &viewport);
+  ComPtr<ID3D11Buffer> offsetCBuf;
+  hr = appData->d3dDevice->CreateBuffer(&offsetCBufDesc, nullptr, offsetCBuf.GetAddressOf());
+  assert(SUCCEEDED(hr));
 
-  auto const startTimePoint{ std::chrono::steady_clock::now() };
-  auto lastFrameTimePoint{ startTimePoint };
-  auto deltaTime{ std::chrono::nanoseconds::zero() };
+  dCtx->VSSetShader(vertexShader.Get(), nullptr, 0);
+  dCtx->PSSetShader(pixelShader.Get(), nullptr, 0);
+  dCtx->IASetInputLayout(inputLayout.Get());
+  dCtx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  dCtx->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
+  dCtx->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+  dCtx->VSSetConstantBuffers(0, 1, offsetCBuf.GetAddressOf());
+  dCtx->PSSetConstantBuffers(0, 1, colorCBuf.GetAddressOf());
+
+  auto const startTimePoint{std::chrono::steady_clock::now()};
+  auto lastFrameTimePoint{startTimePoint};
+  auto deltaTime{std::chrono::nanoseconds::zero()};
 
   while (true) {
 #if USE_WAITABLE_SWAPCHAIN
-		WaitForSingleObjectEx(frameLatencyWaitableObject, 1000, true);
+    WaitForSingleObjectEx(frameLatencyWaitableObject, 1000, true);
 #endif
 
     MSG msg;
@@ -487,31 +515,49 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
       DispatchMessageW(&msg);
     }
 
-    D3D11_MAPPED_SUBRESOURCE mappedOffsetCBuf;
-    appData->immediateContext->Map(appData->offsetCBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedOffsetCBuf);
-    auto* const offsetCBufData{ static_cast<OffsetCBufData*>(mappedOffsetCBuf.pData) };
-    auto const totalElapsedTimeSeconds{ std::chrono::duration<float>{ lastFrameTimePoint - startTimePoint }.count() / 6.f };
-    offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<float>(static_cast<int>(totalElapsedTimeSeconds)) - 0.5f) - 0.25f) * 3.8f;
-    appData->immediateContext->Unmap(appData->offsetCBuf.Get(), 0);
+    RECT clientRect;
+    GetClientRect(hwnd, &clientRect);
+    D3D11_VIEWPORT const viewport{
+      .TopLeftX = 0,
+      .TopLeftY = 0,
+      .Width = static_cast<FLOAT>(clientRect.right - clientRect.left),
+      .Height = static_cast<FLOAT>(clientRect.bottom - clientRect.top),
+      .MinDepth = 0,
+      .MaxDepth = 1
+    };
+    dCtx->RSSetViewports(1, &viewport);
 
-    appData->immediateContext->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
-    appData->immediateContext->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
+    D3D11_MAPPED_SUBRESOURCE mappedOffsetCBuf;
+    hr = dCtx->Map(offsetCBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedOffsetCBuf);
+    assert(SUCCEEDED(hr));
+    auto* const offsetCBufData{static_cast<OffsetCBufData*>(mappedOffsetCBuf.pData)};
+    auto const totalElapsedTimeSeconds{std::chrono::duration<float>{lastFrameTimePoint - startTimePoint}.count() / 6.f};
+    offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<float>(static_cast<int>(totalElapsedTimeSeconds)) - 0.5f) - 0.25f) * 3.8f;
+    dCtx->Unmap(offsetCBuf.Get(), 0);
+
+    dCtx->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
+    dCtx->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
 
     for (int i = 0; i < NUM_DRAW_CALLS_PER_FRAME; i++) {
-      appData->immediateContext->DrawIndexedInstanced(NUM_INDICES, NUM_INSTANCES_PER_DRAW_CALL, 0, 0, 0);
+      dCtx->DrawIndexedInstanced(NUM_INDICES, NUM_INSTANCES_PER_DRAW_CALL, 0, 0, 0);
     }
 
-    appData->swapChain->Present(appData->syncInterval, appData->syncInterval == 0 ? appData->presentFlags : appData->presentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
+    ComPtr<ID3D11CommandList> cmdList;
+    hr = dCtx->FinishCommandList(TRUE, cmdList.GetAddressOf());
+    assert(SUCCEEDED(hr));
+    imCtx->ExecuteCommandList(cmdList.Get(), FALSE);
+    hr = appData->swapChain->Present(appData->syncInterval, appData->syncInterval == 0 ? appData->presentFlags : appData->presentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
+    assert(SUCCEEDED(hr));
 
 #if USE_FENCE
-		auto const currentFenceValue{ fenceValue };
-		context4->Signal(fence.Get(), currentFenceValue);
-		++fenceValue;
+    ++fenceValue;
+    hr = imCtx->Signal(fence.Get(), fenceValue);
+    assert(SUCCEEDED(hr));
 
-		if (fence->GetCompletedValue() < currentFenceValue) {
-			fence->SetEventOnCompletion(currentFenceValue, fenceEvent);
-			WaitForSingleObject(fenceEvent, INFINITE);
-		}
+    if (fence->GetCompletedValue() < fenceValue) {
+      hr = fence->SetEventOnCompletion(fenceValue, nullptr);
+      assert(SUCCEEDED(hr));
+    }
 #endif
 
     do {
