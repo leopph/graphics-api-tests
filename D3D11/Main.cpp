@@ -13,6 +13,7 @@
 #include "shaders/generated/PixelShaderDebug.h"
 #endif
 
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -21,8 +22,8 @@
 using Microsoft::WRL::ComPtr;
 
 
-#define USE_WAITABLE_SWAPCHAIN 1
-#define USE_FENCE 1
+#define USE_WAITABLE_SWAPCHAIN 0
+#define USE_FENCE 0
 
 
 enum class DisplayMode {
@@ -63,23 +64,11 @@ struct OffsetCBufData {
 namespace {
 auto constexpr MAX_FPS{141};
 UINT constexpr NUM_FRAMES_IN_FLIGHT{2};
-auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::Windowed};
+auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::WindowedBorderless};
 auto constexpr NUM_DRAW_CALLS_PER_FRAME{1};
 auto constexpr NUM_INSTANCES_PER_DRAW_CALL{1};
 
-float constexpr VERTEX_DATA[]{
-  -0.05f, 1.0f,
-  0.05f, 1.0f,
-  0.05f, -1.0f,
-  -0.05f, -1.0f
-};
-unsigned constexpr INDEX_DATA[]{
-  0, 1, 2,
-  2, 3, 0
-};
-UINT constexpr NUM_INDICES{ARRAYSIZE(INDEX_DATA)};
-UINT constexpr VERTEX_STRIDE{2 * sizeof(float)};
-UINT constexpr VERTEX_OFFSET{0};
+
 auto constexpr MIN_FRAME_TIME{
   [] {
     if constexpr (MAX_FPS <= 0) {
@@ -99,7 +88,8 @@ FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{0.89f, 0.14f, 0.17f, 1};
 
 auto RecreateSwapChainRTV(AppData& appData) -> void {
   ComPtr<ID3D11Texture2D> backBuf;
-  appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.ReleaseAndGetAddressOf()));
+  auto hr{appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.ReleaseAndGetAddressOf()))};
+  assert(SUCCEEDED(hr));
 
   D3D11_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
     .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -108,13 +98,19 @@ auto RecreateSwapChainRTV(AppData& appData) -> void {
       .MipSlice = 0
     }
   };
-  appData.d3dDevice->CreateRenderTargetView(backBuf.Get(), &rtvDesc, appData.backBufRtv.ReleaseAndGetAddressOf());
+
+  hr = appData.d3dDevice->CreateRenderTargetView(backBuf.Get(), &rtvDesc, appData.backBufRtv.ReleaseAndGetAddressOf());
+  assert(SUCCEEDED(hr));
 }
 
 
 auto ResizeSwapChain(AppData& appData) -> void {
-  appData.backBufRtv.Reset();
-  appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, appData.swapChainFlags);
+  auto hr{appData.backBufRtv.Reset()};
+  assert(SUCCEEDED(hr));
+
+  hr = appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, appData.swapChainFlags);
+  assert(SUCCEEDED(hr));
+
   RecreateSwapChainRTV(appData);
 }
 
@@ -130,13 +126,15 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
 
   switch (displayMode) {
     case DisplayMode::ExclusiveFullscreen: {
-      appData->swapChain->SetFullscreenState(true, nullptr);
+      auto const hr{appData->swapChain->SetFullscreenState(true, nullptr)};
+      assert(SUCCEEDED(hr));
       appData->presentFlags &= ~DXGI_PRESENT_ALLOW_TEARING;
       break;
     }
 
     case DisplayMode::WindowedBorderless: {
-      appData->swapChain->SetFullscreenState(false, nullptr);
+      auto const hr{appData->swapChain->SetFullscreenState(false, nullptr)};
+      assert(SUCCEEDED(hr));
       if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
       SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
       MONITORINFO monitorInfo{.cbSize = sizeof(MONITORINFO)};
@@ -148,7 +146,8 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
     }
 
     case DisplayMode::Windowed: {
-      appData->swapChain->SetFullscreenState(false, nullptr);
+      auto const hr{appData->swapChain->SetFullscreenState(false, nullptr)};
+      assert(SUCCEEDED(hr));
       if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
       SetWindowLongPtrW(hwnd, GWL_STYLE, WINDOWED_STYLE);
       auto const width{appData->windowedRect.right - appData->windowedRect.left};
@@ -172,7 +171,8 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
     }
 
     case WM_DESTROY: {
-      appData->swapChain->SetFullscreenState(false, nullptr);
+      auto const hr{appData->swapChain->SetFullscreenState(false, nullptr)};
+      assert(SUCCEEDED(hr));
       delete appData;
       return 0;
     }
@@ -418,6 +418,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   hr = appData->d3dDevice->CreateInputLayout(&inputElementDesc, 1, gVsBytes, ARRAYSIZE(gVsBytes), inputLayout.GetAddressOf());
   assert(SUCCEEDED(hr));
 
+  std::array constexpr VERTEX_DATA{
+    -0.05f, 1.0f,
+    0.05f, 1.0f,
+    0.05f, -1.0f,
+    -0.05f, -1.0f
+  };
+
   D3D11_BUFFER_DESC constexpr vertexBufferDesc{
     .ByteWidth = sizeof VERTEX_DATA,
     .Usage = D3D11_USAGE_IMMUTABLE,
@@ -428,7 +435,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   };
 
   D3D11_SUBRESOURCE_DATA constexpr vertexSubresourceData{
-    .pSysMem = VERTEX_DATA,
+    .pSysMem = VERTEX_DATA.data(),
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
   };
@@ -436,6 +443,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   ComPtr<ID3D11Buffer> vertexBuffer;
   hr = appData->d3dDevice->CreateBuffer(&vertexBufferDesc, &vertexSubresourceData, vertexBuffer.GetAddressOf());
   assert(SUCCEEDED(hr));
+
+  std::array constexpr INDEX_DATA{
+    0u, 1u, 2u,
+    2u, 3u, 0u
+  };
 
   D3D11_BUFFER_DESC constexpr indexBufferDesc{
     .ByteWidth = sizeof INDEX_DATA,
@@ -447,7 +459,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   };
 
   D3D11_SUBRESOURCE_DATA constexpr subresourceData{
-    .pSysMem = INDEX_DATA,
+    .pSysMem = INDEX_DATA.data(),
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
   };
@@ -488,18 +500,21 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   hr = appData->d3dDevice->CreateBuffer(&offsetCBufDesc, nullptr, offsetCBuf.GetAddressOf());
   assert(SUCCEEDED(hr));
 
-  dCtx->VSSetShader(vertexShader.Get(), nullptr, 0);
-  dCtx->PSSetShader(pixelShader.Get(), nullptr, 0);
-  dCtx->IASetInputLayout(inputLayout.Get());
-  dCtx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  UINT constexpr VERTEX_STRIDE{2 * sizeof(float)};
+  UINT constexpr VERTEX_OFFSET{0};
   dCtx->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
   dCtx->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+  dCtx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  dCtx->IASetInputLayout(inputLayout.Get());
+
+  dCtx->VSSetShader(vertexShader.Get(), nullptr, 0);
   dCtx->VSSetConstantBuffers(0, 1, offsetCBuf.GetAddressOf());
+
+  dCtx->PSSetShader(pixelShader.Get(), nullptr, 0);
   dCtx->PSSetConstantBuffers(0, 1, colorCBuf.GetAddressOf());
 
   auto const startTimePoint{std::chrono::steady_clock::now()};
   auto lastFrameTimePoint{startTimePoint};
-  auto deltaTime{std::chrono::nanoseconds::zero()};
 
   while (true) {
 #if USE_WAITABLE_SWAPCHAIN
@@ -517,6 +532,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
     RECT clientRect;
     GetClientRect(hwnd, &clientRect);
+
     D3D11_VIEWPORT const viewport{
       .TopLeftX = 0,
       .TopLeftY = 0,
@@ -525,27 +541,32 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
       .MinDepth = 0,
       .MaxDepth = 1
     };
+
     dCtx->RSSetViewports(1, &viewport);
 
     D3D11_MAPPED_SUBRESOURCE mappedOffsetCBuf;
     hr = dCtx->Map(offsetCBuf.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedOffsetCBuf);
     assert(SUCCEEDED(hr));
+
     auto* const offsetCBufData{static_cast<OffsetCBufData*>(mappedOffsetCBuf.pData)};
     auto const totalElapsedTimeSeconds{std::chrono::duration<float>{lastFrameTimePoint - startTimePoint}.count() / 6.f};
     offsetCBufData->offsetX = (std::abs(totalElapsedTimeSeconds - static_cast<float>(static_cast<int>(totalElapsedTimeSeconds)) - 0.5f) - 0.25f) * 3.8f;
+
     dCtx->Unmap(offsetCBuf.Get(), 0);
 
     dCtx->OMSetRenderTargets(1, appData->backBufRtv.GetAddressOf(), nullptr);
     dCtx->ClearRenderTargetView(appData->backBufRtv.Get(), CLEAR_COLOR);
 
     for (int i = 0; i < NUM_DRAW_CALLS_PER_FRAME; i++) {
-      dCtx->DrawIndexedInstanced(NUM_INDICES, NUM_INSTANCES_PER_DRAW_CALL, 0, 0, 0);
+      dCtx->DrawIndexedInstanced(static_cast<UINT>(std::size(INDEX_DATA)), NUM_INSTANCES_PER_DRAW_CALL, 0, 0, 0);
     }
 
     ComPtr<ID3D11CommandList> cmdList;
     hr = dCtx->FinishCommandList(TRUE, cmdList.GetAddressOf());
     assert(SUCCEEDED(hr));
+
     imCtx->ExecuteCommandList(cmdList.Get(), FALSE);
+
     hr = appData->swapChain->Present(appData->syncInterval, appData->syncInterval == 0 ? appData->presentFlags : appData->presentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
     assert(SUCCEEDED(hr));
 
@@ -560,10 +581,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     }
 #endif
 
-    do {
-      deltaTime = std::chrono::steady_clock::now() - lastFrameTimePoint;
-    } while (deltaTime < MIN_FRAME_TIME);
-
-    lastFrameTimePoint += deltaTime;
+    while (true) {
+      if (auto const deltaTime{std::chrono::steady_clock::now() - lastFrameTimePoint}; deltaTime >= MIN_FRAME_TIME) {
+        lastFrameTimePoint += deltaTime;
+        break;
+      }
+    }
   }
 }
