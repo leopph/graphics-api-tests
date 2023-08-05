@@ -5,7 +5,11 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
-#ifdef _NDEBUG
+#ifndef NDEBUG
+#include <dxgidebug.h>
+#endif
+
+#ifdef NDEBUG
 #include "shaders/generated/VertexShader.h"
 #include "shaders/generated/PixelShader.h"
 #else
@@ -88,7 +92,7 @@ FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{0.89f, 0.14f, 0.17f, 1};
 
 auto RecreateSwapChainRTV(AppData& appData) -> void {
   ComPtr<ID3D11Texture2D> backBuf;
-  auto hr{appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.ReleaseAndGetAddressOf()))};
+  auto hr{appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.GetAddressOf()))};
   assert(SUCCEEDED(hr));
 
   D3D11_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
@@ -239,7 +243,7 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
 }
 
 
-auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, _In_ int nCmdShow) -> int {
+auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ const HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nCmdShow) -> int {
   WNDCLASSW const windowClass{
     .style = CS_HREDRAW | CS_VREDRAW,
     .lpfnWndProc = &WindowProc,
@@ -280,22 +284,37 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
 
 #ifndef NDEBUG
   {
-    ComPtr<ID3D11Debug> debug;
-    hr = appData->d3dDevice.As<ID3D11Debug>(&debug);
+    ComPtr<ID3D11Debug> d3dDebug;
+    hr = appData->d3dDevice.As<ID3D11Debug>(&d3dDebug);
     assert(SUCCEEDED(hr));
 
-    ComPtr<ID3D11InfoQueue> infoQueue;
-    hr = debug.As<ID3D11InfoQueue>(&infoQueue);
+    ComPtr<ID3D11InfoQueue> d3dInfoQueue;
+    hr = d3dDebug.As<ID3D11InfoQueue>(&d3dInfoQueue);
     assert(SUCCEEDED(hr));
 
-    hr = infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
+    hr = d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
     assert(SUCCEEDED(hr));
-    hr = infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
+    hr = d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
+    assert(SUCCEEDED(hr));
+
+    ComPtr<IDXGIDebug1> dxgiDebug;
+    hr = DXGIGetDebugInterface1(0, IID_PPV_ARGS(dxgiDebug.GetAddressOf()));
+    assert(SUCCEEDED(hr));
+
+    ComPtr<IDXGIInfoQueue> dxgiInfoQueue;
+    hr = dxgiDebug.As(&dxgiInfoQueue);
+    assert(SUCCEEDED(hr));
+
+    hr = dxgiInfoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+    assert(SUCCEEDED(hr));
+    hr = dxgiInfoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
     assert(SUCCEEDED(hr));
   }
 
 #endif
+
   ComPtr<ID3D11DeviceContext4> dCtx;
+
   {
     ComPtr<ID3D11DeviceContext3> tmpDCtx;
     hr = appData->d3dDevice->CreateDeferredContext3(0, tmpDCtx.GetAddressOf());
@@ -500,19 +519,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
   hr = appData->d3dDevice->CreateBuffer(&offsetCBufDesc, nullptr, offsetCBuf.GetAddressOf());
   assert(SUCCEEDED(hr));
 
-  UINT constexpr VERTEX_STRIDE{2 * sizeof(float)};
-  UINT constexpr VERTEX_OFFSET{0};
-  dCtx->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
-  dCtx->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-  dCtx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  dCtx->IASetInputLayout(inputLayout.Get());
-
-  dCtx->VSSetShader(vertexShader.Get(), nullptr, 0);
-  dCtx->VSSetConstantBuffers(0, 1, offsetCBuf.GetAddressOf());
-
-  dCtx->PSSetShader(pixelShader.Get(), nullptr, 0);
-  dCtx->PSSetConstantBuffers(0, 1, colorCBuf.GetAddressOf());
-
   auto const startTimePoint{std::chrono::steady_clock::now()};
   auto lastFrameTimePoint{startTimePoint};
 
@@ -529,6 +535,19 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
       TranslateMessage(&msg);
       DispatchMessageW(&msg);
     }
+
+    UINT constexpr VERTEX_STRIDE{2 * sizeof(float)};
+    UINT constexpr VERTEX_OFFSET{0};
+    dCtx->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), &VERTEX_STRIDE, &VERTEX_OFFSET);
+    dCtx->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+    dCtx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    dCtx->IASetInputLayout(inputLayout.Get());
+
+    dCtx->VSSetShader(vertexShader.Get(), nullptr, 0);
+    dCtx->VSSetConstantBuffers(0, 1, offsetCBuf.GetAddressOf());
+
+    dCtx->PSSetShader(pixelShader.Get(), nullptr, 0);
+    dCtx->PSSetConstantBuffers(0, 1, colorCBuf.GetAddressOf());
 
     RECT clientRect;
     GetClientRect(hwnd, &clientRect);
@@ -562,7 +581,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTAN
     }
 
     ComPtr<ID3D11CommandList> cmdList;
-    hr = dCtx->FinishCommandList(TRUE, cmdList.GetAddressOf());
+    hr = dCtx->FinishCommandList(FALSE, cmdList.GetAddressOf());
     assert(SUCCEEDED(hr));
 
     imCtx->ExecuteCommandList(cmdList.Get(), FALSE);
