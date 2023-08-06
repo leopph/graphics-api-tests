@@ -130,19 +130,38 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
 
   switch (displayMode) {
     case DisplayMode::ExclusiveFullscreen: {
-      auto const hr{appData->swapChain->SetFullscreenState(true, nullptr)};
+      BOOL fullscreenState;
+      auto hr{appData->swapChain->GetFullscreenState(&fullscreenState, nullptr)};
       assert(SUCCEEDED(hr));
+
+      if (!fullscreenState) {
+        hr = appData->swapChain->SetFullscreenState(true, nullptr);
+        assert(SUCCEEDED(hr));
+      }
+
       appData->presentFlags &= ~DXGI_PRESENT_ALLOW_TEARING;
       break;
     }
 
     case DisplayMode::WindowedBorderless: {
-      auto const hr{appData->swapChain->SetFullscreenState(false, nullptr)};
+      BOOL fullscreenState;
+      auto hr{appData->swapChain->GetFullscreenState(&fullscreenState, nullptr)};
       assert(SUCCEEDED(hr));
-      if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
+
+      if (fullscreenState) {
+        hr = appData->swapChain->SetFullscreenState(false, nullptr);
+        assert(SUCCEEDED(hr));
+      }
+
+      if (appData->allowTearing) {
+        appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+      }
+
       SetWindowLongPtrW(hwnd, GWL_STYLE, BORDERLESS_STYLE);
+
       MONITORINFO monitorInfo{.cbSize = sizeof(MONITORINFO)};
       GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+
       auto const width{monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left};
       auto const height{monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top};
       SetWindowPos(hwnd, nullptr, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
@@ -150,13 +169,24 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
     }
 
     case DisplayMode::Windowed: {
-      auto const hr{appData->swapChain->SetFullscreenState(false, nullptr)};
+      BOOL fullscreenState;
+      auto hr{appData->swapChain->GetFullscreenState(&fullscreenState, nullptr)};
       assert(SUCCEEDED(hr));
-      if (appData->allowTearing) { appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING; }
+
+      if (fullscreenState) {
+        hr = appData->swapChain->SetFullscreenState(false, nullptr);
+        assert(SUCCEEDED(hr));
+      }
+
+      if (appData->allowTearing) {
+        appData->presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+      }
+
       SetWindowLongPtrW(hwnd, GWL_STYLE, WINDOWED_STYLE);
       auto const width{appData->windowedRect.right - appData->windowedRect.left};
       auto const height{appData->windowedRect.bottom - appData->windowedRect.top};
       SetWindowPos(hwnd, nullptr, appData->windowedRect.left, appData->windowedRect.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+      break;
     }
   }
 
@@ -175,8 +205,15 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
     }
 
     case WM_DESTROY: {
-      auto const hr{appData->swapChain->SetFullscreenState(false, nullptr)};
+      BOOL fullscreenState;
+      auto hr{appData->swapChain->GetFullscreenState(&fullscreenState, nullptr)};
       assert(SUCCEEDED(hr));
+
+      if (fullscreenState) {
+        hr = appData->swapChain->SetFullscreenState(false, nullptr);
+        assert(SUCCEEDED(hr));
+      }
+
       delete appData;
       return 0;
     }
