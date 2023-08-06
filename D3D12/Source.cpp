@@ -28,7 +28,6 @@ namespace {
   constexpr auto SWAP_CHAIN_BUFFER_COUNT{2};
   constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
 
-
   auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
     if (msg == WM_CLOSE) {
       PostQuitMessage(0);
@@ -117,7 +116,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-  BOOL isTearingSupported{false};
+  BOOL isTearingSupported{FALSE};
   hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &isTearingSupported, sizeof isTearingSupported);
   assert(SUCCEEDED(hr));
 
@@ -198,9 +197,54 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     device->CreateRenderTargetView(backBuffers[i].Get(), &rtvDesc, backBufferRTVs[i]);
   }
 
-  ComPtr<ID3D12CommandAllocator> commandAllocator;
-  hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(commandAllocator.GetAddressOf()));
+  constexpr auto MAX_FRAMES_IN_FLIGHT{2};
+  UINT64 thisFrameFenceValue{MAX_FRAMES_IN_FLIGHT - 1};
+
+  ComPtr<ID3D12Fence1> fence;
+  hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
   assert(SUCCEEDED(hr));
+
+  auto const signalAndWaitFence{
+    [&](UINT64 const signalValue, UINT64 const waitValue) {
+      hr = commandQueue->Signal(fence.Get(), signalValue);
+      assert(SUCCEEDED(hr));
+
+      if (fence->GetCompletedValue() < waitValue) {
+        hr = fence->SetEventOnCompletion(waitValue, nullptr);
+        assert(SUCCEEDED(hr));
+      }
+    }
+  };
+
+  auto const waitForGpuCompletion{
+    [&] {
+      auto const signalValue{++thisFrameFenceValue};
+      auto const waitValue{signalValue};
+      signalAndWaitFence(signalValue, waitValue);
+    }
+  };
+
+  auto const waitForInFlightFrames{
+    [&] {
+      auto const signalValue{++thisFrameFenceValue};
+      auto const waitValue{signalValue - MAX_FRAMES_IN_FLIGHT + 1};
+      signalAndWaitFence(signalValue, waitValue);
+    }
+  };
+
+  UINT64 frameIdx{0};
+
+  std::array<ComPtr<ID3D12CommandAllocator>, MAX_FRAMES_IN_FLIGHT> cmdAllocators;
+  std::array<ComPtr<ID3D12GraphicsCommandList6>, MAX_FRAMES_IN_FLIGHT> cmdLists;
+
+  for (auto i{0}; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(cmdAllocators[i].GetAddressOf()));
+    assert(SUCCEEDED(hr));
+
+    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
+                                    IID_PPV_ARGS(cmdLists[i].GetAddressOf()));
+    assert(SUCCEEDED(hr));
+  }
 
   ComPtr<ID3D12RootSignature> rootSig;
 
@@ -212,7 +256,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     ComPtr<ID3DBlob> rootSigBlob;
     ComPtr<ID3DBlob> errBlob;
     hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, rootSigBlob.GetAddressOf(),
-    errBlob.GetAddressOf());
+                                     errBlob.GetAddressOf());
     assert(SUCCEEDED(hr));
 
     hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
@@ -255,31 +299,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-  ComPtr<ID3D12GraphicsCommandList> commandList;
-  hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
-                                           IID_PPV_ARGS(commandList.GetAddressOf()));
-  assert(SUCCEEDED(hr));
-
-  ComPtr<ID3D12Fence1> fence;
-  hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
-  assert(SUCCEEDED(hr));
-
-  UINT64 fenceValue{1};
-
-  auto const waitForGpu{
-    [&] {
-      hr = commandQueue->Signal(fence.Get(), fenceValue);
-      assert(SUCCEEDED(hr));
-
-      if (fence->GetCompletedValue() < fenceValue) {
-        hr = fence->SetEventOnCompletion(fenceValue, nullptr);
-        assert(SUCCEEDED(hr));
-      }
-
-      fenceValue += 1;
-    }
-  };
-
   std::array constexpr vertices{
     Vec2{0, 0.5f},
     Vec2{0.5f, -0.5f},
@@ -291,8 +310,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   ComPtr<ID3D12Resource> vertexBuffer;
   hr = device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &vertBufDesc,
-                                                D3D12_RESOURCE_STATE_COMMON, nullptr,
-                                                IID_PPV_ARGS(vertexBuffer.GetAddressOf()));
+                                       D3D12_RESOURCE_STATE_COMMON, nullptr,
+                                       IID_PPV_ARGS(vertexBuffer.GetAddressOf()));
   assert(SUCCEEDED(hr));
 
   {
@@ -300,8 +319,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     ComPtr<ID3D12Resource> vertexUploadBuffer;
     hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &vertBufDesc,
-                                                  D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                                  IID_PPV_ARGS(vertexUploadBuffer.GetAddressOf()));
+                                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                         IID_PPV_ARGS(vertexUploadBuffer.GetAddressOf()));
     assert(SUCCEEDED(hr));
 
     void* mappedVertexUploadBuffer;
@@ -311,22 +330,23 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     std::memcpy(mappedVertexUploadBuffer, vertices.data(), sizeof vertices);
     vertexUploadBuffer->Unmap(0, nullptr);
 
-    hr = commandList->Reset(commandAllocator.Get(), pso.Get());
+    hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
     assert(SUCCEEDED(hr));
 
-    commandList->CopyResource(vertexBuffer.Get(), vertexUploadBuffer.Get());
+    cmdLists[frameIdx]->CopyResource(vertexBuffer.Get(), vertexUploadBuffer.Get());
 
     auto const uploadBarrier{
       CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
                                            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
     };
-    commandList->ResourceBarrier(1, &uploadBarrier);
 
-    hr = commandList->Close();
+    cmdLists[frameIdx]->ResourceBarrier(1, &uploadBarrier);
+
+    hr = cmdLists[frameIdx]->Close();
     assert(SUCCEEDED(hr));
 
-    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{commandList.Get()}.data());
-    waitForGpu();
+    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
+    waitForGpuCompletion();
   }
 
   D3D12_VERTEX_BUFFER_VIEW const vertexBufferView{
@@ -340,7 +360,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
       if (msg.message == WM_QUIT) {
-        waitForGpu();
+        waitForGpuCompletion();
         return static_cast<int>(msg.wParam);
       }
 
@@ -348,53 +368,55 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DispatchMessageW(&msg);
     }
 
-    hr = commandAllocator->Reset();
+    hr = cmdAllocators[frameIdx]->Reset();
     assert(SUCCEEDED(hr));
 
-    hr = commandList->Reset(commandAllocator.Get(), pso.Get());
+    hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
     assert(SUCCEEDED(hr));
 
-    commandList->SetGraphicsRootSignature(rootSig.Get());
+    cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
 
     CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
-    commandList->RSSetViewports(1, &viewport);
+    cmdLists[frameIdx]->RSSetViewports(1, &viewport);
 
     CD3DX12_RECT const scissorRect{
       static_cast<LONG>(viewport.TopLeftX), static_cast<LONG>(viewport.TopLeftY),
       static_cast<LONG>(viewport.TopLeftX + viewport.Width), static_cast<LONG>(viewport.TopLeftY + viewport.Height)
     };
-    commandList->RSSetScissorRects(1, &scissorRect);
+    cmdLists[frameIdx]->RSSetScissorRects(1, &scissorRect);
 
     auto const swapChainRtvBarrier{
       CD3DX12_RESOURCE_BARRIER::Transition(backBuffers[backBufIdx].Get(), D3D12_RESOURCE_STATE_PRESENT,
                                            D3D12_RESOURCE_STATE_RENDER_TARGET)
     };
-    commandList->ResourceBarrier(1, &swapChainRtvBarrier);
+    cmdLists[frameIdx]->ResourceBarrier(1, &swapChainRtvBarrier);
 
     float constexpr clearColor[]{0.2f, 0.3f, 0.3f, 1.f};
-    commandList->ClearRenderTargetView(backBufferRTVs[backBufIdx], clearColor, 0, nullptr);
-    commandList->OMSetRenderTargets(1, &backBufferRTVs[backBufIdx], FALSE, nullptr);
+    cmdLists[frameIdx]->ClearRenderTargetView(backBufferRTVs[backBufIdx], clearColor, 0, nullptr);
+    cmdLists[frameIdx]->OMSetRenderTargets(1, &backBufferRTVs[backBufIdx], FALSE, nullptr);
 
-    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-    commandList->DrawInstanced(3, 1, 0, 0);
+    cmdLists[frameIdx]->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmdLists[frameIdx]->IASetVertexBuffers(0, 1, &vertexBufferView);
+    cmdLists[frameIdx]->DrawInstanced(3, 1, 0, 0);
 
     auto const swapChainPresentBarrier{
       CD3DX12_RESOURCE_BARRIER::Transition(backBuffers[backBufIdx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
                                            D3D12_RESOURCE_STATE_PRESENT)
     };
-    commandList->ResourceBarrier(1, &swapChainPresentBarrier);
 
-    hr = commandList->Close();
+    cmdLists[frameIdx]->ResourceBarrier(1, &swapChainPresentBarrier);
+
+    hr = cmdLists[frameIdx]->Close();
     assert(SUCCEEDED(hr));
 
-    ID3D12CommandList* const commandLists{commandList.Get()};
+    ID3D12CommandList* const commandLists{cmdLists[frameIdx].Get()};
     commandQueue->ExecuteCommandLists(1, &commandLists);
 
     hr = swapChain->Present(0, presentFlags);
     assert(SUCCEEDED(hr));
 
-    waitForGpu();
+    waitForInFlightFrames();
     backBufIdx = swapChain->GetCurrentBackBufferIndex();
+    frameIdx = (frameIdx + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 }
