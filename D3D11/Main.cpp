@@ -66,7 +66,7 @@ struct OffsetCBufData {
 
 
 namespace {
-auto constexpr MAX_FPS{141};
+auto constexpr MAX_FPS{0};
 UINT constexpr NUM_FRAMES_IN_FLIGHT{2};
 auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::WindowedBorderless};
 auto constexpr NUM_DRAW_CALLS_PER_FRAME{1};
@@ -214,6 +214,8 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
           ChangeDisplayMode(hwnd, DisplayMode::Windowed);
         } else if (wparam == 'M') {
           appData->minimizeBorderlessOnFocusLoss = !appData->minimizeBorderlessOnFocusLoss;
+        } else if (wparam == 'V') {
+          appData->syncInterval = 1 - appData->syncInterval;
         }
       }
 
