@@ -17,6 +17,7 @@
 #include "shaders/generated/PixelShaderDebug.h"
 #endif
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -27,7 +28,7 @@ using Microsoft::WRL::ComPtr;
 
 
 #define USE_WAITABLE_SWAPCHAIN 0
-#define USE_FENCE 0
+#define USE_FENCE 1
 
 
 enum class DisplayMode {
@@ -67,7 +68,7 @@ struct OffsetCBufData {
 
 namespace {
 auto constexpr MAX_FPS{0};
-UINT constexpr IN_FLIGHT_FRAME_COUNT{2};
+UINT constexpr MAX_FRAMES_IN_FLIGHT{16};
 auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::WindowedBorderless};
 auto constexpr NUM_DRAW_CALLS_PER_FRAME{1};
 auto constexpr NUM_INSTANCES_PER_DRAW_CALL{1};
@@ -364,16 +365,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   }
 
 #if USE_FENCE
-  std::array<UINT64, IN_FLIGHT_FRAME_COUNT> fenceValues;
-  std::array<ComPtr<ID3D11Fence>, IN_FLIGHT_FRAME_COUNT> fences;
-  UINT64 frameIdx{0};
+  UINT64 thisFrameFenceValue{MAX_FRAMES_IN_FLIGHT - 1};
 
-  for (auto i{0}; i < IN_FLIGHT_FRAME_COUNT; i++) {
-    constexpr auto initialFenceValue{0};
-    fenceValues[i] = initialFenceValue;
-    hr = appData->d3dDevice->CreateFence(initialFenceValue, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(fences[i].GetAddressOf()));
-    assert(SUCCEEDED(hr));
-  }
+  ComPtr<ID3D11Fence> fence;
+  hr = appData->d3dDevice->CreateFence(0, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
+  assert(SUCCEEDED(hr));
 #endif
 
   ComPtr<IDXGIDevice4> dxgiDevice;
@@ -439,14 +435,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #if USE_FENCE
   hr = appData->swapChain->SetMaximumFrameLatency(16);
 #else
-  hr = appData->swapChain->SetMaximumFrameLatency(IN_FLIGHT_FRAME_COUNT);
+  hr = appData->swapChain->SetMaximumFrameLatency(MAX_FRAMES_IN_FLIGHT);
 #endif
   assert(SUCCEEDED(hr));
 #else
 #if USE_FENCE
   hr = dxgiDevice->SetMaximumFrameLatency(16);
 #else
-  hr = dxgiDevice->SetMaximumFrameLatency(IN_FLIGHT_FRAME_COUNT);
+  hr = dxgiDevice->SetMaximumFrameLatency(MAX_FRAMES_IN_FLIGHT);
 #endif
   assert(SUCCEEDED(hr));
 #endif
@@ -643,16 +639,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
 
 #if USE_FENCE
-    ++fenceValues[frameIdx];
-    hr = imCtx->Signal(fences[frameIdx].Get(), fenceValues[frameIdx]);
+    auto const fenceSignalValue{++thisFrameFenceValue};
+    auto const fenceWaitValue{fenceSignalValue - MAX_FRAMES_IN_FLIGHT + 1};
+
+    hr = imCtx->Signal(fence.Get(), fenceSignalValue);
     assert(SUCCEEDED(hr));
 
-    if (fences[frameIdx]->GetCompletedValue() < fenceValues[frameIdx]) {
-      hr = fences[frameIdx]->SetEventOnCompletion(fenceValues[frameIdx], nullptr);
+    if (fence->GetCompletedValue() < fenceWaitValue) {
+      hr = fence->SetEventOnCompletion(fenceWaitValue, nullptr);
       assert(SUCCEEDED(hr));
     }
-
-    frameIdx = (frameIdx + 1) % IN_FLIGHT_FRAME_COUNT;
 #endif
 
     while (true) {
