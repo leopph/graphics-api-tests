@@ -112,46 +112,31 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-  BOOL isTearingSupported{FALSE};
-  hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &isTearingSupported, sizeof isTearingSupported);
-  assert(SUCCEEDED(hr));
-
-  UINT swapChainFlags{0};
-  UINT presentFlags{0};
-
-  if (isTearingSupported) {
-    swapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
-    presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
-  }
-
   constexpr auto SWAP_CHAIN_BUFFER_COUNT{2};
   constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
   ComPtr<IDXGISwapChain4> swapChain;
 
   {
-    DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
+    DXGI_SWAP_CHAIN_DESC1 constexpr swapChainDesc{
       .Width = 0,
       .Height = 0,
       .Format = SWAP_CHAIN_FORMAT,
       .Stereo = FALSE,
-      .SampleDesc = {
-        .Count = 1,
-        .Quality = 0
-      },
+      .SampleDesc = {.Count = 1, .Quality = 0},
       .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
       .BufferCount = SWAP_CHAIN_BUFFER_COUNT,
       .Scaling = DXGI_SCALING_NONE,
       .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
       .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-      .Flags = swapChainFlags
+      .Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
     };
 
-    ComPtr<IDXGISwapChain1> swapChain1;
+    ComPtr<IDXGISwapChain1> tmpSwapChain;
     hr = factory->CreateSwapChainForHwnd(commandQueue.Get(), hwnd.get(), &swapChainDesc, nullptr, nullptr,
-                                         swapChain1.GetAddressOf());
+                                         tmpSwapChain.GetAddressOf());
     assert(SUCCEEDED(hr));
 
-    hr = swapChain1.As(&swapChain);
+    hr = tmpSwapChain.As(&swapChain);
     assert(SUCCEEDED(hr));
   }
 
@@ -186,10 +171,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     D3D12_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
       .Format = SWAP_CHAIN_FORMAT,
       .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-      .Texture2D = {
-        .MipSlice = 0,
-        .PlaneSlice = 0
-      }
+      .Texture2D = {.MipSlice = 0, .PlaneSlice = 0}
     };
 
     device->CreateRenderTargetView(backBuffers[i].Get(), &rtvDesc, backBufferRTVs[i]);
@@ -408,7 +390,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
 
-    hr = swapChain->Present(0, presentFlags);
+    hr = swapChain->Present(0, DXGI_PRESENT_ALLOW_TEARING);
     assert(SUCCEEDED(hr));
 
     waitForInFlightFrames();
