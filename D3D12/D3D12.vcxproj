@@ -16,7 +16,7 @@
     <ProjectGuid>{b7c01100-5c1b-413b-a109-122436a2bdc0}</ProjectGuid>
     <RootNamespace>D3D12Test</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>HelloTriangle12</ProjectName>
+    <ProjectName>D3D12</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">

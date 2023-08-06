@@ -5,7 +5,7 @@ VisualStudioVersion = 17.4.33110.190
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "D3D11", "D3D11\D3D11.vcxproj", "{0E33F372-7A89-4B9B-8EC1-1FDC2435ACB3}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloTriangle12", "HelloTriangle12\HelloTriangle12.vcxproj", "{B7C01100-5C1B-413B-A109-122436A2BDC0}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "D3D12", "D3D12\D3D12.vcxproj", "{B7C01100-5C1B-413B-A109-122436A2BDC0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
