@@ -20,14 +20,8 @@
 #include "shaders/generated/PSBin.h"
 #endif
 
-using Microsoft::WRL::ComPtr;
-using Vec2 = std::array<float, 2>;
-
 
 namespace {
-  constexpr auto SWAP_CHAIN_BUFFER_COUNT{2};
-  constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
-
   auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
     if (msg == WM_CLOSE) {
       PostQuitMessage(0);
@@ -44,7 +38,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .lpfnWndProc = &WindowProc,
     .hInstance = hInstance,
     .hCursor = LoadCursorW(nullptr, IDC_ARROW),
-    .lpszClassName = L"MyClass"
+    .lpszClassName = L"D3D12Test"
   };
 
   auto const result{RegisterClassW(&windowClass)};
@@ -55,7 +49,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DestroyWindow(hwnd);
     }
   })> const hwnd{
-    CreateWindowExW(0, windowClass.lpszClassName, L"MyWindow", WS_POPUP, 0, 0, GetSystemMetrics(SM_CXSCREEN),
+    CreateWindowExW(0, windowClass.lpszClassName, L"D3D12Test", WS_POPUP, 0, 0, GetSystemMetrics(SM_CXSCREEN),
                     GetSystemMetrics(SM_CYSCREEN), nullptr, nullptr, hInstance, nullptr)
   };
 
@@ -64,6 +58,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ShowWindow(hwnd.get(), nShowCmd);
 
   HRESULT hr{};
+
+  using Microsoft::WRL::ComPtr;
 
 #ifndef NDEBUG
   {
@@ -128,13 +124,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
   }
 
+  constexpr auto SWAP_CHAIN_BUFFER_COUNT{2};
+  constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
   ComPtr<IDXGISwapChain4> swapChain;
 
   {
     DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
       .Width = 0,
       .Height = 0,
-      .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+      .Format = SWAP_CHAIN_FORMAT,
       .Stereo = FALSE,
       .SampleDesc = {
         .Count = 1,
@@ -254,9 +252,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<ID3DBlob> rootSigBlob;
-    ComPtr<ID3DBlob> errBlob;
-    hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, rootSigBlob.GetAddressOf(),
-                                     errBlob.GetAddressOf());
+    hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, rootSigBlob.GetAddressOf(), nullptr);
     assert(SUCCEEDED(hr));
 
     hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
@@ -268,7 +264,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   {
     D3D12_INPUT_ELEMENT_DESC constexpr inputElementDesc{
-      .SemanticName = "VERTEXPOS",
+      .SemanticName = "POSITION",
       .SemanticIndex = 0,
       .Format = DXGI_FORMAT_R32G32_FLOAT,
       .InputSlot = 0,
@@ -298,6 +294,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(pso.GetAddressOf()));
     assert(SUCCEEDED(hr));
   }
+
+  using Vec2 = std::array<float, 2>;
 
   std::array constexpr vertices{
     Vec2{0, 0.5f},
@@ -403,14 +401,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       CD3DX12_RESOURCE_BARRIER::Transition(backBuffers[backBufIdx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
                                            D3D12_RESOURCE_STATE_PRESENT)
     };
-
     cmdLists[frameIdx]->ResourceBarrier(1, &swapChainPresentBarrier);
 
     hr = cmdLists[frameIdx]->Close();
     assert(SUCCEEDED(hr));
 
-    ID3D12CommandList* const commandLists{cmdLists[frameIdx].Get()};
-    commandQueue->ExecuteCommandLists(1, &commandLists);
+    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
 
     hr = swapChain->Present(0, presentFlags);
     assert(SUCCEEDED(hr));

@@ -1,3 +1,3 @@
-float4 VSMain(float2 vertPos : VERTEXPOS) : SV_POSITION {
-    return float4(vertPos, 0, 1);
+float4 main(const float4 posOS : POSITION) : SV_POSITION {
+    return posOS;
 }
