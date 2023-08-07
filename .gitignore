@@ -398,3 +398,4 @@ FodyWeavers.xsd
 *.sln.iml
 
 */shaders/generated
+*/vcpkg_installed
