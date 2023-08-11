@@ -502,7 +502,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .StructureByteStride = 0
   };
 
-  D3D11_SUBRESOURCE_DATA constexpr vertexSubresourceData{
+  D3D11_SUBRESOURCE_DATA const vertexSubresourceData{
     .pSysMem = VERTEX_DATA.data(),
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
@@ -526,7 +526,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .StructureByteStride = 0
   };
 
-  D3D11_SUBRESOURCE_DATA constexpr subresourceData{
+  D3D11_SUBRESOURCE_DATA const subresourceData{
     .pSysMem = INDEX_DATA.data(),
     .SysMemPitch = 0,
     .SysMemSlicePitch = 0
