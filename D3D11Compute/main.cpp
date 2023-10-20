@@ -183,7 +183,7 @@ auto WINAPI WinMain(HINSTANCE const hInstance, HINSTANCE const hPrevInstance, PS
     imCtx->CSSetUnorderedAccessViews(0, 1, std::array{renderTexUav.Get()}.data(), nullptr);
 
     imCtx->ClearUnorderedAccessViewFloat(renderTexUav.Get(), std::array{0.1f, 0.1f, 0.1f, 1.0f}.data());
-    imCtx->Dispatch(WINDOW_WIDTH, WINDOW_HEIGHT, 1);
+    imCtx->Dispatch(50, 50, 1);
 
     imCtx->CopyResource(backBuf.Get(), renderTex.Get());
 
