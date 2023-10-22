@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <d3d12.h>
 #include <d3dx12.h>
+#include <D3D12MemAlloc.h>
 #include <dxgi1_6.h>
 #include <Windows.h>
 #include <wrl/client.h>
@@ -97,6 +98,25 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 #endif
+
+  ComPtr<D3D12MA::Allocator> allocator;
+
+  {
+    ComPtr<IDXGIAdapter4> adapter4;
+    hr = factory->EnumAdapterByLuid(device->GetAdapterLuid(), IID_PPV_ARGS(adapter4.GetAddressOf()));
+    assert(SUCCEEDED(hr));
+
+    D3D12MA::ALLOCATOR_DESC const allocatorDesc{
+      .Flags = D3D12MA::ALLOCATOR_FLAG_NONE,
+      .pDevice = device.Get(),
+      .PreferredBlockSize = 0,
+      .pAllocationCallbacks = nullptr,
+      .pAdapter = adapter4.Get()
+    };
+
+    hr = CreateAllocator(&allocatorDesc, allocator.GetAddressOf());
+    assert(SUCCEEDED(hr));
+  }
 
   ComPtr<ID3D12CommandQueue> commandQueue;
 
@@ -292,38 +312,47 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     Vec2{-0.5f, -0.5f}
   };
 
-  CD3DX12_HEAP_PROPERTIES const defaultHeapProps{D3D12_HEAP_TYPE_DEFAULT};
   auto const vertBufDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof vertices)};
 
-  ComPtr<ID3D12Resource> vertexBuffer;
-  hr = device->CreateCommittedResource(&defaultHeapProps, D3D12_HEAP_FLAG_NONE, &vertBufDesc,
-                                       D3D12_RESOURCE_STATE_COMMON, nullptr,
-                                       IID_PPV_ARGS(vertexBuffer.GetAddressOf()));
+  D3D12MA::ALLOCATION_DESC const vertBufAllocDesc{
+    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
+    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
+    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
+    .CustomPool = nullptr,
+    .pPrivateData = nullptr
+  };
+
+  ComPtr<D3D12MA::Allocation> vertBufAlloc;
+  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
   {
-    CD3DX12_HEAP_PROPERTIES const uploadHeapProps{D3D12_HEAP_TYPE_UPLOAD};
+    D3D12MA::ALLOCATION_DESC const vertUploadBufAllocDesc{
+      .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
+      .HeapType = D3D12_HEAP_TYPE_UPLOAD,
+      .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
+      .CustomPool = nullptr,
+      .pPrivateData = nullptr
+    };
 
-    ComPtr<ID3D12Resource> vertexUploadBuffer;
-    hr = device->CreateCommittedResource(&uploadHeapProps, D3D12_HEAP_FLAG_NONE, &vertBufDesc,
-                                         D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                         IID_PPV_ARGS(vertexUploadBuffer.GetAddressOf()));
+    ComPtr<D3D12MA::Allocation> vertUploadBufAlloc;
+    hr = allocator->CreateResource(&vertUploadBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, vertUploadBufAlloc.GetAddressOf(), IID_NULL, nullptr);
     assert(SUCCEEDED(hr));
 
     void* mappedVertexUploadBuffer;
-    hr = vertexUploadBuffer->Map(0, nullptr, &mappedVertexUploadBuffer);
+    hr = vertUploadBufAlloc->GetResource()->Map(0, nullptr, &mappedVertexUploadBuffer);
     assert(SUCCEEDED(hr));
 
     std::memcpy(mappedVertexUploadBuffer, vertices.data(), sizeof vertices);
-    vertexUploadBuffer->Unmap(0, nullptr);
+    vertUploadBufAlloc->GetResource()->Unmap(0, nullptr);
 
     hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
     assert(SUCCEEDED(hr));
 
-    cmdLists[frameIdx]->CopyResource(vertexBuffer.Get(), vertexUploadBuffer.Get());
+    cmdLists[frameIdx]->CopyResource(vertBufAlloc->GetResource(), vertUploadBufAlloc->GetResource());
 
     auto const uploadBarrier{
-      CD3DX12_RESOURCE_BARRIER::Transition(vertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
+      CD3DX12_RESOURCE_BARRIER::Transition(vertBufAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST,
                                            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
     };
 
@@ -337,7 +366,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   }
 
   D3D12_VERTEX_BUFFER_VIEW const vertexBufferView{
-    .BufferLocation = vertexBuffer->GetGPUVirtualAddress(),
+    .BufferLocation = vertBufAlloc->GetResource()->GetGPUVirtualAddress(),
     .SizeInBytes = sizeof vertices,
     .StrideInBytes = sizeof(decltype(vertices)::value_type)
   };
