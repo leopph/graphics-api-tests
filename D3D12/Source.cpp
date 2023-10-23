@@ -249,11 +249,29 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> rootSig;
 
   {
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC constexpr rootSigDesc{
+    D3D12_DESCRIPTOR_RANGE1 constexpr descRange{
+      .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+      .NumDescriptors = 1,
+      .BaseShaderRegister = 0,
+      .RegisterSpace = 0,
+      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+      .OffsetInDescriptorsFromTableStart = 0,
+    };
+
+    D3D12_ROOT_PARAMETER1 const rootParam{
+      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+      .DescriptorTable = {
+        .NumDescriptorRanges = 1,
+        .pDescriptorRanges = &descRange
+      },
+      .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+    };
+
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{
       .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
       .Desc_1_1 = {
-        .NumParameters = 0,
-        .pParameters = nullptr,
+        .NumParameters = 1,
+        .pParameters = &rootParam,
         .NumStaticSamplers = 0,
         .pStaticSamplers = nullptr,
         .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
@@ -323,7 +341,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<D3D12MA::Allocation> vertBufAlloc;
-  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
+  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+                                 vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
   {
@@ -336,7 +355,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<D3D12MA::Allocation> vertUploadBufAlloc;
-    hr = allocator->CreateResource(&vertUploadBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, vertUploadBufAlloc.GetAddressOf(), IID_NULL, nullptr);
+    hr = allocator->CreateResource(&vertUploadBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                   vertUploadBufAlloc.GetAddressOf(), IID_NULL, nullptr);
     assert(SUCCEEDED(hr));
 
     void* mappedVertexUploadBuffer;
@@ -365,11 +385,94 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     waitForGpuCompletion();
   }
 
+  auto const texDesc{CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1)};
+  D3D12MA::ALLOCATION_DESC const texAllocDesc{
+    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
+    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
+    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
+    .CustomPool = nullptr,
+    .pPrivateData = nullptr
+  };
+
+  ComPtr<D3D12MA::Allocation> texAlloc;
+  hr = allocator->CreateResource(&texAllocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                 texAlloc.GetAddressOf(), IID_NULL, nullptr);
+  assert(SUCCEEDED(hr));
+
+  {
+    D3D12MA::ALLOCATION_DESC constexpr texUploadAllocDesc{
+      .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
+      .HeapType = D3D12_HEAP_TYPE_UPLOAD,
+      .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
+      .CustomPool = nullptr,
+      .pPrivateData = nullptr
+    };
+
+    std::array<unsigned char, 4> const color{255, 0, 255, 255};
+
+    auto const texUploadDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof(color))};
+
+    ComPtr<D3D12MA::Allocation> texUploadAlloc;
+    hr = allocator->CreateResource(&texUploadAllocDesc, &texUploadDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                                   texUploadAlloc.GetAddressOf(), IID_NULL, nullptr);
+    assert(SUCCEEDED(hr));
+
+    hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
+    assert(SUCCEEDED(hr));
+
+    D3D12_SUBRESOURCE_DATA const subResData{
+      .pData = color.data(),
+      .RowPitch = 0,
+      .SlicePitch = 0
+    };
+
+    UpdateSubresources<1>(cmdLists[frameIdx].Get(), texAlloc->GetResource(), texUploadAlloc->GetResource(), 0, 0, 1,
+                          &subResData);
+
+    auto const uploadBarrier{
+      CD3DX12_RESOURCE_BARRIER::Transition(texAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST,
+                                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+    };
+
+    cmdLists[frameIdx]->ResourceBarrier(1, &uploadBarrier);
+
+    hr = cmdLists[frameIdx]->Close();
+    assert(SUCCEEDED(hr));
+
+    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
+    waitForGpuCompletion();
+  }
+
   D3D12_VERTEX_BUFFER_VIEW const vertexBufferView{
     .BufferLocation = vertBufAlloc->GetResource()->GetGPUVirtualAddress(),
     .SizeInBytes = sizeof vertices,
     .StrideInBytes = sizeof(decltype(vertices)::value_type)
   };
+
+  D3D12_DESCRIPTOR_HEAP_DESC constexpr descHeapDesc{
+    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+    .NumDescriptors = 1,
+    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    .NodeMask = 0
+  };
+
+  ComPtr<ID3D12DescriptorHeap> descHeap;
+  hr = device->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(descHeap.GetAddressOf()));
+  assert(SUCCEEDED(hr));
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
+    .Format = texDesc.Format,
+    .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
+    .Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
+      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1,
+      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3),
+    .Texture2D = {
+      .MostDetailedMip = 0, .MipLevels = 1, .PlaneSlice = 0, .ResourceMinLODClamp = 0.0f
+    }
+  };
+
+  device->CreateShaderResourceView(texAlloc->GetResource(), &texSrvDesc,
+                                   descHeap->GetCPUDescriptorHandleForHeapStart());
 
   while (true) {
     MSG msg;
@@ -391,6 +494,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
 
     cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
+    cmdLists[frameIdx]->SetDescriptorHeaps(1, descHeap.GetAddressOf());
+    cmdLists[frameIdx]->SetGraphicsRootDescriptorTable(0, descHeap->GetGPUDescriptorHandleForHeapStart());
 
     CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
     cmdLists[frameIdx]->RSSetViewports(1, &viewport);
