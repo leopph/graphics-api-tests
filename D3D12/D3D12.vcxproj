@@ -90,7 +90,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Source.cpp" />
+    <ClCompile Include="main.cpp" />
     <ClCompile Include="vendor\D3D12MemoryAllocator\D3D12MemAlloc.cpp" />
   </ItemGroup>
   <ItemGroup>
