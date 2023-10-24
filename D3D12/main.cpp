@@ -249,14 +249,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> rootSig;
 
   {
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC constexpr rootSigDesc{
       .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
       .Desc_1_1 = {
         .NumParameters = 0,
         .pParameters = nullptr,
         .NumStaticSamplers = 0,
         .pStaticSamplers = nullptr,
-        .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+        .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
       }
     };
 
@@ -272,16 +272,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12PipelineState> pso;
 
   {
-    D3D12_INPUT_ELEMENT_DESC constexpr inputElementDesc{
-      .SemanticName = "POSITION",
-      .SemanticIndex = 0,
-      .Format = DXGI_FORMAT_R32G32_FLOAT,
-      .InputSlot = 0,
-      .AlignedByteOffset = 0,
-      .InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-      .InstanceDataStepRate = 0
-    };
-
     D3D12_GRAPHICS_PIPELINE_STATE_DESC const psoDesc{
       .pRootSignature = rootSig.Get(),
       .VS = CD3DX12_SHADER_BYTECODE{gVSBin, ARRAYSIZE(gVSBin)},
@@ -289,7 +279,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .BlendState = CD3DX12_BLEND_DESC{D3D12_DEFAULT},
       .SampleMask = UINT_MAX,
       .RasterizerState = CD3DX12_RASTERIZER_DESC{D3D12_DEFAULT},
-      .InputLayout = {.pInputElementDescs = &inputElementDesc, .NumElements = 1},
+      .InputLayout = {.pInputElementDescs = nullptr, .NumElements = 0},
       .IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED,
       .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
       .NumRenderTargets = 1,
@@ -425,22 +415,33 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     waitForGpuCompletion();
   }
 
-  D3D12_VERTEX_BUFFER_VIEW const vertexBufferView{
-    .BufferLocation = vertBufAlloc->GetResource()->GetGPUVirtualAddress(),
-    .SizeInBytes = sizeof vertices,
-    .StrideInBytes = sizeof(decltype(vertices)::value_type)
-  };
-
   D3D12_DESCRIPTOR_HEAP_DESC constexpr descHeapDesc{
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-    .NumDescriptors = 1,
+    .NumDescriptors = 2,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
     .NodeMask = 0
   };
 
-  ComPtr<ID3D12DescriptorHeap> descHeap;
-  hr = device->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(descHeap.GetAddressOf()));
+  ComPtr<ID3D12DescriptorHeap> resHeap;
+  hr = device->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(resHeap.GetAddressOf()));
   assert(SUCCEEDED(hr));
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC const vertBufSrvDesc{
+    .Format = DXGI_FORMAT_UNKNOWN,
+    .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
+    .Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
+      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1,
+      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3),
+    .Buffer = {
+      .FirstElement = 0,
+      .NumElements = static_cast<UINT>(std::size(vertices)),
+      .StructureByteStride = sizeof(decltype(vertices)::value_type),
+      .Flags = D3D12_BUFFER_SRV_FLAG_NONE
+    }
+  };
+
+  device->CreateShaderResourceView(vertBufAlloc->GetResource(), &vertBufSrvDesc,
+                                   resHeap->GetCPUDescriptorHandleForHeapStart());
 
   D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
     .Format = texDesc.Format,
@@ -454,7 +455,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   device->CreateShaderResourceView(texAlloc->GetResource(), &texSrvDesc,
-                                   descHeap->GetCPUDescriptorHandleForHeapStart());
+                                   CD3DX12_CPU_DESCRIPTOR_HANDLE{
+                                     resHeap->GetCPUDescriptorHandleForHeapStart(), 1,
+                                     device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+                                   });
 
   while (true) {
     MSG msg;
@@ -475,7 +479,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
     assert(SUCCEEDED(hr));
 
-    cmdLists[frameIdx]->SetDescriptorHeaps(1, descHeap.GetAddressOf());
+    cmdLists[frameIdx]->SetDescriptorHeaps(1, resHeap.GetAddressOf());
     cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
 
     CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
@@ -498,7 +502,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     cmdLists[frameIdx]->OMSetRenderTargets(1, &backBufferRTVs[backBufIdx], FALSE, nullptr);
 
     cmdLists[frameIdx]->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdLists[frameIdx]->IASetVertexBuffers(0, 1, &vertexBufferView);
     cmdLists[frameIdx]->DrawInstanced(3, 1, 0, 0);
 
     auto const swapChainPresentBarrier{

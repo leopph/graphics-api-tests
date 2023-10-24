@@ -1,3 +1,4 @@
-float4 main(const float4 posOS : POSITION) : SV_POSITION {
-    return posOS;
+float4 main(const uint vertexId : SV_VertexID) : SV_Position {
+  Buffer<float2> positions = ResourceDescriptorHeap[0];
+  return float4(positions[vertexId], 0, 1);
 }
