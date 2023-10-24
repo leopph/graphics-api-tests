@@ -272,25 +272,24 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12PipelineState> pso;
 
   {
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC const psoDesc{
-      .pRootSignature = rootSig.Get(),
-      .VS = CD3DX12_SHADER_BYTECODE{gVSBin, ARRAYSIZE(gVSBin)},
-      .PS = CD3DX12_SHADER_BYTECODE{gPSBin, ARRAYSIZE(gPSBin)},
-      .BlendState = CD3DX12_BLEND_DESC{D3D12_DEFAULT},
-      .SampleMask = UINT_MAX,
-      .RasterizerState = CD3DX12_RASTERIZER_DESC{D3D12_DEFAULT},
-      .InputLayout = {.pInputElementDescs = nullptr, .NumElements = 0},
-      .IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED,
-      .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-      .NumRenderTargets = 1,
-      .RTVFormats = {SWAP_CHAIN_FORMAT},
-      .SampleDesc = {.Count = 1, .Quality = 0},
-      .NodeMask = 0,
-      .CachedPSO = {nullptr, 0},
-      .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
+    struct {
+      CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE rootSig;
+      CD3DX12_PIPELINE_STATE_STREAM_VS vs;
+      CD3DX12_PIPELINE_STATE_STREAM_PS ps;
+      CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS rtvFormats;
+    } stream{
+        .rootSig = rootSig.Get(),
+        .vs = CD3DX12_SHADER_BYTECODE{gVSBin, ARRAYSIZE(gVSBin)},
+        .ps = CD3DX12_SHADER_BYTECODE{gPSBin, ARRAYSIZE(gPSBin)},
+        .rtvFormats = {D3D12_RT_FORMAT_ARRAY{.RTFormats = {SWAP_CHAIN_FORMAT}, .NumRenderTargets = 1}}
+      };
+
+    D3D12_PIPELINE_STATE_STREAM_DESC streamDesc{
+      .SizeInBytes = sizeof(stream),
+      .pPipelineStateSubobjectStream = &stream
     };
 
-    hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(pso.GetAddressOf()));
+    hr = device->CreatePipelineState(&streamDesc, IID_PPV_ARGS(pso.GetAddressOf()));
     assert(SUCCEEDED(hr));
   }
 
