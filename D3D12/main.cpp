@@ -249,29 +249,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> rootSig;
 
   {
-    D3D12_DESCRIPTOR_RANGE1 constexpr descRange{
-      .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-      .NumDescriptors = 1,
-      .BaseShaderRegister = 0,
-      .RegisterSpace = 0,
-      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-      .OffsetInDescriptorsFromTableStart = 0,
-    };
-
-    D3D12_ROOT_PARAMETER1 const rootParam{
-      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-      .DescriptorTable = {
-        .NumDescriptorRanges = 1,
-        .pDescriptorRanges = &descRange
-      },
-      .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
-    };
-
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{
       .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
       .Desc_1_1 = {
-        .NumParameters = 1,
-        .pParameters = &rootParam,
+        .NumParameters = 0,
+        .pParameters = nullptr,
         .NumStaticSamplers = 0,
         .pStaticSamplers = nullptr,
         .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
@@ -493,9 +475,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
     assert(SUCCEEDED(hr));
 
-    cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
     cmdLists[frameIdx]->SetDescriptorHeaps(1, descHeap.GetAddressOf());
-    cmdLists[frameIdx]->SetGraphicsRootDescriptorTable(0, descHeap->GetGPUDescriptorHandleForHeapStart());
+    cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
 
     CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
     cmdLists[frameIdx]->RSSetViewports(1, &viewport);
