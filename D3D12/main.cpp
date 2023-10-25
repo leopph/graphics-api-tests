@@ -236,13 +236,22 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   std::array<ComPtr<ID3D12CommandAllocator>, MAX_FRAMES_IN_FLIGHT> cmdAllocators;
   std::array<ComPtr<ID3D12GraphicsCommandList6>, MAX_FRAMES_IN_FLIGHT> cmdLists;
+  ComPtr<ID3D12CommandAllocator> bundleAllocator;
+  ComPtr<ID3D12GraphicsCommandList6> bundle;
 
   for (auto i{0}; i < MAX_FRAMES_IN_FLIGHT; i++) {
     hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(cmdAllocators[i].GetAddressOf()));
     assert(SUCCEEDED(hr));
 
+    hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(bundleAllocator.GetAddressOf()));
+    assert(SUCCEEDED(hr));
+
     hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
                                     IID_PPV_ARGS(cmdLists[i].GetAddressOf()));
+    assert(SUCCEEDED(hr));
+
+    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, D3D12_COMMAND_LIST_FLAG_NONE,
+                                    IID_PPV_ARGS(bundle.GetAddressOf()));
     assert(SUCCEEDED(hr));
   }
 
@@ -459,6 +468,17 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
                                      device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
                                    });
 
+  hr = bundle->Reset(bundleAllocator.Get(), pso.Get());
+  assert(SUCCEEDED(hr));
+
+  bundle->SetGraphicsRootSignature(rootSig.Get());
+  bundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  bundle->DrawInstanced(3, 1, 0, 0);
+
+  hr = bundle->Close();
+  assert(SUCCEEDED(hr));
+
+
   while (true) {
     MSG msg;
 
@@ -479,7 +499,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
 
     cmdLists[frameIdx]->SetDescriptorHeaps(1, resHeap.GetAddressOf());
-    cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
 
     CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
     cmdLists[frameIdx]->RSSetViewports(1, &viewport);
@@ -500,8 +519,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     cmdLists[frameIdx]->ClearRenderTargetView(backBufferRTVs[backBufIdx], clearColor, 0, nullptr);
     cmdLists[frameIdx]->OMSetRenderTargets(1, &backBufferRTVs[backBufIdx], FALSE, nullptr);
 
-    cmdLists[frameIdx]->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmdLists[frameIdx]->DrawInstanced(3, 1, 0, 0);
+    cmdLists[frameIdx]->ExecuteBundle(bundle.Get());
 
     auto const swapChainPresentBarrier{
       CD3DX12_RESOURCE_BARRIER::Transition(backBuffers[backBufIdx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
