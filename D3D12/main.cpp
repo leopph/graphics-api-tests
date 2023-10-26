@@ -22,6 +22,12 @@
 #endif
 
 
+extern "C" {
+__declspec(dllexport) extern UINT const D3D12SDKVersion{D3D12_SDK_VERSION};
+__declspec(dllexport) extern char const* D3D12SDKPath{".\\D3D12\\"};
+}
+
+
 namespace {
   auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
     if (msg == WM_CLOSE) {
