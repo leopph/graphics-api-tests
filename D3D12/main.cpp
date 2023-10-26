@@ -311,7 +311,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<D3D12MA::Allocation> vertBufAlloc;
-  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COMMON, nullptr,
+  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
                                  vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
@@ -343,7 +343,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     auto const uploadBarrier{
       CD3DX12_RESOURCE_BARRIER::Transition(vertBufAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST,
-                                           D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+                                           D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
     };
 
     cmdLists[frameIdx]->ResourceBarrier(1, &uploadBarrier);
