@@ -469,7 +469,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundleAllocator.Get(), pso.Get(), IID_PPV_ARGS(&bundle));
   assert(SUCCEEDED(hr));
 
-  bundle->SetGraphicsRootSignature(rootSig.Get());
   bundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   bundle->DrawInstanced(3, 1, 0, 0);
 
@@ -512,6 +511,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
                                            D3D12_RESOURCE_STATE_RENDER_TARGET)
     };
     cmdLists[frameIdx]->ResourceBarrier(1, &swapChainRtvBarrier);
+    cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
 
     float constexpr clearColor[]{0.2f, 0.3f, 0.3f, 1.f};
     cmdLists[frameIdx]->ClearRenderTargetView(backBufferRTVs[backBufIdx], clearColor, 0, nullptr);
