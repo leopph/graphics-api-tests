@@ -126,8 +126,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="shaders\constant-buffer.hlsli" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="shaders\interop.h" />
     <ClInclude Include="vendor\D3D12MemoryAllocator\D3D12MemAlloc.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
