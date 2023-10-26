@@ -236,22 +236,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   std::array<ComPtr<ID3D12CommandAllocator>, MAX_FRAMES_IN_FLIGHT> cmdAllocators;
   std::array<ComPtr<ID3D12GraphicsCommandList6>, MAX_FRAMES_IN_FLIGHT> cmdLists;
-  ComPtr<ID3D12CommandAllocator> bundleAllocator;
-  ComPtr<ID3D12GraphicsCommandList6> bundle;
 
   for (auto i{0}; i < MAX_FRAMES_IN_FLIGHT; i++) {
     hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(cmdAllocators[i].GetAddressOf()));
     assert(SUCCEEDED(hr));
 
-    hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(bundleAllocator.GetAddressOf()));
-    assert(SUCCEEDED(hr));
-
-    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
-                                    IID_PPV_ARGS(cmdLists[i].GetAddressOf()));
-    assert(SUCCEEDED(hr));
-
-    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, D3D12_COMMAND_LIST_FLAG_NONE,
-                                    IID_PPV_ARGS(bundle.GetAddressOf()));
+    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(cmdLists[i].GetAddressOf()));
     assert(SUCCEEDED(hr));
   }
 
@@ -468,7 +458,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
                                      device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
                                    });
 
-  hr = bundle->Reset(bundleAllocator.Get(), pso.Get());
+
+  ComPtr<ID3D12CommandAllocator> bundleAllocator;
+  hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&bundleAllocator));
+  assert(SUCCEEDED(hr));
+
+  ComPtr<ID3D12GraphicsCommandList6> bundle;
+  hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundleAllocator.Get(), pso.Get(), IID_PPV_ARGS(&bundle));
   assert(SUCCEEDED(hr));
 
   bundle->SetGraphicsRootSignature(rootSig.Get());
