@@ -302,7 +302,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto const vertBufDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof vertices)};
 
-  D3D12MA::ALLOCATION_DESC const vertBufAllocDesc{
+  D3D12MA::ALLOCATION_DESC constexpr vertBufAllocDesc{
     .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
     .HeapType = D3D12_HEAP_TYPE_DEFAULT,
     .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
@@ -316,7 +316,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   {
-    D3D12MA::ALLOCATION_DESC const vertUploadBufAllocDesc{
+    D3D12MA::ALLOCATION_DESC constexpr vertUploadBufAllocDesc{
       .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
       .HeapType = D3D12_HEAP_TYPE_UPLOAD,
       .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
@@ -356,7 +356,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   }
 
   auto const texDesc{CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1)};
-  D3D12MA::ALLOCATION_DESC const texAllocDesc{
+  D3D12MA::ALLOCATION_DESC constexpr texAllocDesc{
     .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
     .HeapType = D3D12_HEAP_TYPE_DEFAULT,
     .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
@@ -378,7 +378,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .pPrivateData = nullptr
     };
 
-    std::array<unsigned char, 4> const color{255, 0, 255, 255};
+    std::array<unsigned char, 4> constexpr color{255, 0, 255, 255};
 
     auto const texUploadDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof(color))};
 
@@ -424,12 +424,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CreateDescriptorHeap(&descHeapDesc, IID_PPV_ARGS(resHeap.GetAddressOf()));
   assert(SUCCEEDED(hr));
 
-  D3D12_SHADER_RESOURCE_VIEW_DESC const vertBufSrvDesc{
+  D3D12_SHADER_RESOURCE_VIEW_DESC constexpr vertBufSrvDesc{
     .Format = DXGI_FORMAT_UNKNOWN,
     .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
-    .Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
-      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1,
-      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3),
+    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
     .Buffer = {
       .FirstElement = 0,
       .NumElements = static_cast<UINT>(std::size(vertices)),
@@ -444,9 +442,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
     .Format = texDesc.Format,
     .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D,
-    .Shader4ComponentMapping = D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
-      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1,
-      D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_2, D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_3),
+    .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
     .Texture2D = {
       .MostDetailedMip = 0, .MipLevels = 1, .PlaneSlice = 0, .ResourceMinLODClamp = 0.0f
     }
