@@ -256,21 +256,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> rootSig;
 
   {
-    D3D12_ROOT_PARAMETER1 constexpr cbvRootParam{
-      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
-      .Descriptor = {.ShaderRegister = 0, .RegisterSpace = 0, .Flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE},
-      .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
-    };
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{
-      .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
-      .Desc_1_1 = {
-        .NumParameters = 1,
-        .pParameters = &cbvRootParam,
-        .NumStaticSamplers = 0,
-        .pStaticSamplers = nullptr,
-        .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
-      }
-    };
+    CD3DX12_ROOT_PARAMETER1 rootParam;
+    rootParam.InitAsConstants(2, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{1, &rootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED};
 
     ComPtr<ID3DBlob> rootSigBlob;
     hr = D3D12SerializeVersionedRootSignature(&rootSigDesc, rootSigBlob.GetAddressOf(), nullptr);
@@ -483,64 +471,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = bundle->Close();
   assert(SUCCEEDED(hr));
 
-  ComPtr<D3D12MA::Allocation> cbAlloc;
-
-  auto const cbDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof(DescriptorIndices))};
-  D3D12MA::ALLOCATION_DESC constexpr cbAllocDesc{
-    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
-    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-    .CustomPool = nullptr,
-    .pPrivateData = nullptr
-  };
-
-  hr = allocator->CreateResource(&cbAllocDesc, &cbDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, &cbAlloc, IID_NULL, nullptr);
-  assert(SUCCEEDED(hr));
-
-  {
-    D3D12MA::ALLOCATION_DESC constexpr uploadAllocDesc{
-      .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-      .HeapType = D3D12_HEAP_TYPE_UPLOAD,
-      .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-      .CustomPool = nullptr,
-      .pPrivateData = nullptr
-    };
-
-    ComPtr<D3D12MA::Allocation> uploadAlloc;
-    hr = allocator->CreateResource(&uploadAllocDesc, &cbDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &uploadAlloc, IID_NULL, nullptr);
-    assert(SUCCEEDED(hr));
-
-    void* uploadMapped;
-    hr = uploadAlloc->GetResource()->Map(0, nullptr, &uploadMapped);
-    assert(SUCCEEDED(hr));
-
-    DescriptorIndices constexpr descIndices{
-      .vbIdx = vbSrvIdx,
-      .texIdx = texSrvIdx
-    };
-
-    std::memcpy(uploadMapped, &descIndices, sizeof(descIndices));
-    uploadAlloc->GetResource()->Unmap(0, nullptr);
-
-    hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
-    assert(SUCCEEDED(hr));
-
-    cmdLists[frameIdx]->CopyResource(cbAlloc->GetResource(), uploadAlloc->GetResource());
-
-    auto const uploadBarrier{
-      CD3DX12_RESOURCE_BARRIER::Transition(cbAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST,
-                                           D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
-    };
-
-    cmdLists[frameIdx]->ResourceBarrier(1, &uploadBarrier);
-
-    hr = cmdLists[frameIdx]->Close();
-    assert(SUCCEEDED(hr));
-
-    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
-    waitForGpuCompletion();
-  }
-
   while (true) {
     MSG msg;
 
@@ -562,7 +492,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     cmdLists[frameIdx]->SetDescriptorHeaps(1, resHeap.GetAddressOf());
     cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
-    cmdLists[frameIdx]->SetGraphicsRootConstantBufferView(0, cbAlloc->GetResource()->GetGPUVirtualAddress());
+    cmdLists[frameIdx]->SetGraphicsRoot32BitConstants(0, 2, std::array{vbSrvIdx, texSrvIdx}.data(), 0);
 
     CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
     cmdLists[frameIdx]->RSSetViewports(1, &viewport);
