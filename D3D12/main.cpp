@@ -293,15 +293,38 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-  using Vec2 = std::array<float, 2>;
+  // CREATE UPLOAD BUFFER
 
-  std::array constexpr vertices{
-    Vec2{0, 0.5f},
-    Vec2{0.5f, -0.5f},
-    Vec2{-0.5f, -0.5f}
+  D3D12MA::ALLOCATION_DESC constexpr uploadAllocDesc{
+    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
+    .HeapType = D3D12_HEAP_TYPE_UPLOAD,
+    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
+    .CustomPool = nullptr,
+    .pPrivateData = nullptr
   };
 
-  auto const vertBufDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof vertices)};
+  auto constexpr uploadBufSize{64 * 1024};
+  auto const uploadResDesc{CD3DX12_RESOURCE_DESC1::Buffer(uploadBufSize)};
+
+  ComPtr<D3D12MA::Allocation> uploadAlloc;
+  ComPtr<ID3D12Resource2> uploadBuf;
+
+  hr = allocator->CreateResource2(&uploadAllocDesc, &uploadResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &uploadAlloc, IID_PPV_ARGS(&uploadBuf));
+  assert(SUCCEEDED(hr));
+
+  void* mappedUploadBuf;
+  hr = uploadBuf->Map(0, nullptr, &mappedUploadBuf);
+  assert(SUCCEEDED(hr));
+
+  // CREATE VERTEX BUFFER
+
+  std::array constexpr vertices{
+    std::array{0.0f, 0.5f},
+    std::array{0.5f, -0.5f},
+    std::array{-0.5f, -0.5f}
+  };
+
+  auto const vertBufDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices))};
 
   D3D12MA::ALLOCATION_DESC constexpr vertBufAllocDesc{
     .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
@@ -312,51 +335,32 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<D3D12MA::Allocation> vertBufAlloc;
-  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                 vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
+  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
-  {
-    D3D12MA::ALLOCATION_DESC constexpr vertUploadBufAllocDesc{
-      .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-      .HeapType = D3D12_HEAP_TYPE_UPLOAD,
-      .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-      .CustomPool = nullptr,
-      .pPrivateData = nullptr
-    };
+  // UPLOAD VERTEX DATA
 
-    ComPtr<D3D12MA::Allocation> vertUploadBufAlloc;
-    hr = allocator->CreateResource(&vertUploadBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                   vertUploadBufAlloc.GetAddressOf(), IID_NULL, nullptr);
-    assert(SUCCEEDED(hr));
+  std::memcpy(mappedUploadBuf, vertices.data(), sizeof(vertices));
 
-    void* mappedVertexUploadBuffer;
-    hr = vertUploadBufAlloc->GetResource()->Map(0, nullptr, &mappedVertexUploadBuffer);
-    assert(SUCCEEDED(hr));
+  hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
+  assert(SUCCEEDED(hr));
 
-    std::memcpy(mappedVertexUploadBuffer, vertices.data(), sizeof vertices);
-    vertUploadBufAlloc->GetResource()->Unmap(0, nullptr);
+  cmdLists[frameIdx]->CopyBufferRegion(vertBufAlloc->GetResource(), 0, uploadBuf.Get(), 0, sizeof(vertices));
 
-    hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
-    assert(SUCCEEDED(hr));
+  auto const vertexPostUploadBarrier{CD3DX12_RESOURCE_BARRIER::Transition(vertBufAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)};
 
-    cmdLists[frameIdx]->CopyResource(vertBufAlloc->GetResource(), vertUploadBufAlloc->GetResource());
+  cmdLists[frameIdx]->ResourceBarrier(1, &vertexPostUploadBarrier);
 
-    auto const uploadBarrier{
-      CD3DX12_RESOURCE_BARRIER::Transition(vertBufAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST,
-                                           D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
-    };
+  hr = cmdLists[frameIdx]->Close();
+  assert(SUCCEEDED(hr));
 
-    cmdLists[frameIdx]->ResourceBarrier(1, &uploadBarrier);
+  commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
+  waitForGpuCompletion();
 
-    hr = cmdLists[frameIdx]->Close();
-    assert(SUCCEEDED(hr));
+  // CREATE TEXTURE
 
-    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
-    waitForGpuCompletion();
-  }
+  std::array<unsigned char, 4> constexpr texColor{255, 0, 255, 255};
 
-  auto const texDesc{CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1)};
   D3D12MA::ALLOCATION_DESC constexpr texAllocDesc{
     .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
     .HeapType = D3D12_HEAP_TYPE_DEFAULT,
@@ -365,54 +369,32 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .pPrivateData = nullptr
   };
 
+  auto const texDesc{CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1)};
+
   ComPtr<D3D12MA::Allocation> texAlloc;
-  hr = allocator->CreateResource(&texAllocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                 texAlloc.GetAddressOf(), IID_NULL, nullptr);
+  hr = allocator->CreateResource(&texAllocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, texAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
-  {
-    D3D12MA::ALLOCATION_DESC constexpr texUploadAllocDesc{
-      .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-      .HeapType = D3D12_HEAP_TYPE_UPLOAD,
-      .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-      .CustomPool = nullptr,
-      .pPrivateData = nullptr
-    };
+  // UPLOAD TEXTURE DATA
 
-    std::array<unsigned char, 4> constexpr color{255, 0, 255, 255};
+  std::memcpy(mappedUploadBuf, texColor.data(), sizeof(texColor));
 
-    auto const texUploadDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof(color))};
+  hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
+  assert(SUCCEEDED(hr));
 
-    ComPtr<D3D12MA::Allocation> texUploadAlloc;
-    hr = allocator->CreateResource(&texUploadAllocDesc, &texUploadDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                   texUploadAlloc.GetAddressOf(), IID_NULL, nullptr);
-    assert(SUCCEEDED(hr));
+  CD3DX12_TEXTURE_COPY_LOCATION const srcTexCopyLoc{uploadBuf.Get(), D3D12_PLACED_SUBRESOURCE_FOOTPRINT{.Offset = 0, .Footprint = CD3DX12_SUBRESOURCE_FOOTPRINT{DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1, 1, sizeof(texColor)}}};
+  CD3DX12_TEXTURE_COPY_LOCATION const dstTexCopyLoc{texAlloc->GetResource(), 0};
+  cmdLists[frameIdx]->CopyTextureRegion(&dstTexCopyLoc, 0, 0, 0, &srcTexCopyLoc, nullptr);
 
-    hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
-    assert(SUCCEEDED(hr));
+  auto const texPostUploadBarrier{CD3DX12_RESOURCE_BARRIER::Transition(texAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)};
 
-    D3D12_SUBRESOURCE_DATA const subResData{
-      .pData = color.data(),
-      .RowPitch = 0,
-      .SlicePitch = 0
-    };
+  cmdLists[frameIdx]->ResourceBarrier(1, &texPostUploadBarrier);
 
-    UpdateSubresources<1>(cmdLists[frameIdx].Get(), texAlloc->GetResource(), texUploadAlloc->GetResource(), 0, 0, 1,
-                          &subResData);
+  hr = cmdLists[frameIdx]->Close();
+  assert(SUCCEEDED(hr));
 
-    auto const uploadBarrier{
-      CD3DX12_RESOURCE_BARRIER::Transition(texAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST,
-                                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-    };
-
-    cmdLists[frameIdx]->ResourceBarrier(1, &uploadBarrier);
-
-    hr = cmdLists[frameIdx]->Close();
-    assert(SUCCEEDED(hr));
-
-    commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
-    waitForGpuCompletion();
-  }
+  commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
+  waitForGpuCompletion();
 
   D3D12_DESCRIPTOR_HEAP_DESC constexpr resHeapDesc{
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
