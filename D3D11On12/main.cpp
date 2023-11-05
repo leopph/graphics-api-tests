@@ -77,9 +77,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = device.As(&infoQueue);
     assert(SUCCEEDED(hr));
 
-    hr = infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
-    assert(SUCCEEDED(hr));
-
     hr = infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
     assert(SUCCEEDED(hr));
 
@@ -135,9 +132,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = d3dDebug.As<ID3D11InfoQueue>(&d3dInfoQueue);
   assert(SUCCEEDED(hr));
 
-  hr = d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, TRUE);
-  assert(SUCCEEDED(hr));
-
   hr = d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
   assert(SUCCEEDED(hr));
 
@@ -153,7 +147,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   // CREATE D3D12 FENCE
 
-  UINT64 thisFrameFenceValue{MAX_FRAMES_IN_FLIGHT - 1};
+  UINT64 fenceValue{MAX_FRAMES_IN_FLIGHT - 1};
 
   ComPtr<ID3D12Fence1> fence;
   hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
@@ -173,7 +167,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto const waitForGpuCompletion{
     [&] {
-      auto const signalValue{++thisFrameFenceValue};
+      auto const signalValue{++fenceValue};
       auto const waitValue{signalValue};
       signalAndWaitFence(signalValue, waitValue);
     }
@@ -181,7 +175,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto const waitForInFlightFrames{
     [&] {
-      auto const signalValue{++thisFrameFenceValue};
+      auto const signalValue{++fenceValue};
       auto const waitValue{signalValue - MAX_FRAMES_IN_FLIGHT + 1};
       signalAndWaitFence(signalValue, waitValue);
     }
