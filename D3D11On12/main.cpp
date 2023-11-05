@@ -31,13 +31,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .lpfnWndProc = &WindowProc,
     .hInstance = hInstance,
     .hCursor = LoadCursorW(nullptr, IDC_ARROW),
-    .lpszClassName = L"D3D12Test"
+    .lpszClassName = L"D3D11On12Test"
   };
 
   auto const result{RegisterClassW(&windowClass)};
   assert(result);
 
-  std::unique_ptr<std::remove_pointer_t<HWND>, decltype([](HWND const hwnd) -> void { if (hwnd) { DestroyWindow(hwnd); } })> const hwnd{CreateWindowExW(0, windowClass.lpszClassName, L"D3D12Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr)};
+  std::unique_ptr<std::remove_pointer_t<HWND>, decltype([](HWND const hwnd) -> void { if (hwnd) { DestroyWindow(hwnd); } })> const hwnd{CreateWindowExW(0, windowClass.lpszClassName, L"D3D11On12Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr)};
   assert(hwnd);
 
   ShowWindow(hwnd.get(), nShowCmd);
