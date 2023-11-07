@@ -197,7 +197,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   // CREATE SWAPCHAIN
 
-  constexpr auto SWAP_CHAIN_BUFFER_COUNT{2};
+  constexpr auto SWAP_CHAIN_BUFFER_COUNT{MAX_FRAMES_IN_FLIGHT};
   constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
   DXGI_SWAP_CHAIN_DESC1 constexpr swapChainDesc{
     .Width = 1,
@@ -227,7 +227,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   /*D3D12_DESCRIPTOR_HEAP_DESC constexpr rtvHeapDesc{
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-    .NumDescriptors = 2,
+    .NumDescriptors = SWAP_CHAIN_BUFFER_COUNT,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
     .NodeMask = 0
   };
