@@ -58,8 +58,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DestroyWindow(hwnd);
     }
   })> const hwnd{
-    CreateWindowExW(0, windowClass.lpszClassName, L"D3D12Test", WS_POPUP, 0, 0, GetSystemMetrics(SM_CXSCREEN),
-                    GetSystemMetrics(SM_CYSCREEN), nullptr, nullptr, hInstance, nullptr)
+    CreateWindowExW(0, windowClass.lpszClassName, L"D3D12Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                    CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr)
   };
 
   assert(hwnd);
