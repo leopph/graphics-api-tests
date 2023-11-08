@@ -260,30 +260,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   // CREATE D3D11 SWAPCHAIN RTVs
 
   std::array<ComPtr<ID3D12Resource2>, SWAP_CHAIN_BUFFER_COUNT> swapChainBufs;
-  std::array<ComPtr<ID3D11Texture2D>, SWAP_CHAIN_BUFFER_COUNT> swapChainBufs11;
-  std::array<ComPtr<ID3D11RenderTargetView>, SWAP_CHAIN_BUFFER_COUNT> rtvs11;
 
   for (auto i{0}; i < SWAP_CHAIN_BUFFER_COUNT; i++) {
     hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&swapChainBufs[i]));
-    assert(SUCCEEDED(hr));
-
-    D3D11_RESOURCE_FLAGS constexpr resFlags11{
-      .BindFlags = D3D11_BIND_RENDER_TARGET,
-      .MiscFlags = 0,
-      .CPUAccessFlags = 0,
-      .StructureByteStride = 0
-    };
-
-    hr = device11On12->CreateWrappedResource(swapChainBufs[i].Get(), &resFlags11, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT, IID_PPV_ARGS(&swapChainBufs11[i]));
-    assert(SUCCEEDED(hr));
-
-    D3D11_RENDER_TARGET_VIEW_DESC constexpr rtvDesc11{
-      .Format = SWAP_CHAIN_FORMAT,
-      .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-      .Texture2D = {.MipSlice = 0}
-    };
-
-    hr = device11->CreateRenderTargetView(swapChainBufs11[i].Get(), &rtvDesc11, &rtvs11[i]);
     assert(SUCCEEDED(hr));
   }
 
@@ -295,21 +274,23 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
     .SampleDesc = {.Count = 1, .Quality = 0},
     .Usage = D3D11_USAGE_DEFAULT,
-    .BindFlags = 0,
+    .BindFlags = D3D11_BIND_RENDER_TARGET,
     .CPUAccessFlags = 0,
     .MiscFlags = 0
   };
 
-  std::array<unsigned char, 4> constexpr texData{255, 0, 255, 255};
+  ComPtr<ID3D11Texture2D> tex2d;
+  hr = device11->CreateTexture2D(&tex2dDesc, nullptr, &tex2d);
+  assert(SUCCEEDED(hr));
 
-  D3D11_SUBRESOURCE_DATA const subresData{
-    .pSysMem = texData.data(),
-    .SysMemPitch = sizeof(texData),
-    .SysMemSlicePitch = 0
+  D3D11_RENDER_TARGET_VIEW_DESC constexpr texRtvDesc{
+    .Format = tex2dDesc.Format,
+    .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
+    .Texture2D = {.MipSlice = 0}
   };
 
-  ComPtr<ID3D11Texture2D> tex2d;
-  hr = device11->CreateTexture2D(&tex2dDesc, &subresData, &tex2d);
+  ComPtr<ID3D11RenderTargetView> texRtv;
+  hr = device11->CreateRenderTargetView(tex2d.Get(), &texRtvDesc, &texRtv);
   assert(SUCCEEDED(hr));
 
   while (true) {
@@ -325,10 +306,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DispatchMessageW(&msg);
     }
 
-    /*device11On12->AcquireWrappedResources(std::array<ID3D11Resource*, 1>{swapChainBufs11[backBufIdx].Get()}.data(), 1);
-    imCtx->ClearRenderTargetView(rtvs11[backBufIdx].Get(), std::array{1.0f, 0.0f, 1.0f, 1.0f}.data());
-    device11On12->ReleaseWrappedResources(std::array<ID3D11Resource*, 1>{swapChainBufs11[backBufIdx].Get()}.data(), 1);
-    imCtx->Flush();*/
+    imCtx->ClearRenderTargetView(texRtv.Get(), std::array{1.0f, 0.0f, 1.0f, 1.0f}.data());
+    imCtx->Flush();
 
     ComPtr<ID3D12Resource> tex2d12;
     hr = device11On12->UnwrapUnderlyingResource(tex2d.Get(), cmdQueue.Get(), IID_PPV_ARGS(&tex2d12));
