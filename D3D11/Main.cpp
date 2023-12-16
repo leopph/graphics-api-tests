@@ -4,6 +4,7 @@
 #include <d3d11_4.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
+#include <d3dcompiler.h>
 
 #ifndef NDEBUG
 #include <dxgidebug.h>
@@ -23,6 +24,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 
@@ -67,69 +69,70 @@ struct OffsetCBufData {
 
 
 namespace {
-auto constexpr MAX_FPS{0};
-UINT constexpr MAX_FRAMES_IN_FLIGHT{16};
-auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::WindowedBorderless};
-auto constexpr NUM_DRAW_CALLS_PER_FRAME{1};
-auto constexpr NUM_INSTANCES_PER_DRAW_CALL{1};
+  auto constexpr MAX_FPS{0};
+  UINT constexpr MAX_FRAMES_IN_FLIGHT{16};
+  auto constexpr DEFAULT_DISPLAY_MODE{DisplayMode::WindowedBorderless};
+  auto constexpr NUM_DRAW_CALLS_PER_FRAME{1};
+  auto constexpr NUM_INSTANCES_PER_DRAW_CALL{1};
 
 
-auto constexpr MIN_FRAME_TIME{
-  [] {
-    if constexpr (MAX_FPS <= 0) {
-      return std::chrono::nanoseconds::zero();
-    } else {
-      auto constexpr secondInNanos{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1})};
-      return std::chrono::nanoseconds{(secondInNanos.count() + MAX_FPS - 1) / MAX_FPS};
-    }
-  }()
-};
-DWORD constexpr WINDOWED_STYLE{WS_OVERLAPPEDWINDOW};
-DWORD constexpr BORDERLESS_STYLE{WS_OVERLAPPED};
-FLOAT constexpr CLEAR_COLOR[]{0.21f, 0.27f, 0.31f, 1};
-FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{0.16f, 0.67f, 0.53f, 1};
-FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{0.89f, 0.14f, 0.17f, 1};
-
-
-auto RecreateSwapChainRTV(AppData& appData) -> void {
-  ComPtr<ID3D11Texture2D> backBuf;
-  auto hr{appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.GetAddressOf()))};
-  assert(SUCCEEDED(hr));
-
-  D3D11_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
-    .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
-    .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-    .Texture2D = {
-      .MipSlice = 0
-    }
+  auto constexpr MIN_FRAME_TIME{
+    [] {
+      if constexpr (MAX_FPS <= 0) {
+        return std::chrono::nanoseconds::zero();
+      }
+      else {
+        auto constexpr secondInNanos{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds{1})};
+        return std::chrono::nanoseconds{(secondInNanos.count() + MAX_FPS - 1) / MAX_FPS};
+      }
+    }()
   };
-
-  hr = appData.d3dDevice->CreateRenderTargetView(backBuf.Get(), &rtvDesc, appData.backBufRtv.ReleaseAndGetAddressOf());
-  assert(SUCCEEDED(hr));
-}
-
-
-auto ResizeSwapChain(AppData& appData) -> void {
-  auto hr{appData.backBufRtv.Reset()};
-  assert(SUCCEEDED(hr));
-
-  hr = appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, appData.swapChainFlags);
-  assert(SUCCEEDED(hr));
-
-  RecreateSwapChainRTV(appData);
-}
+  DWORD constexpr WINDOWED_STYLE{WS_OVERLAPPEDWINDOW};
+  DWORD constexpr BORDERLESS_STYLE{WS_OVERLAPPED};
+  FLOAT constexpr CLEAR_COLOR[]{0.21f, 0.27f, 0.31f, 1};
+  FLOAT constexpr OVERLAY_SUPPORT_COLOR[]{0.16f, 0.67f, 0.53f, 1};
+  FLOAT constexpr NO_OVERLAY_SUPPORT_COLOR[]{0.89f, 0.14f, 0.17f, 1};
 
 
-auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
-  auto* const appData{reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA))};
+  auto RecreateSwapChainRTV(AppData& appData) -> void {
+    ComPtr<ID3D11Texture2D> backBuf;
+    auto hr{appData.swapChain->GetBuffer(0, IID_PPV_ARGS(backBuf.GetAddressOf()))};
+    assert(SUCCEEDED(hr));
 
-  if (appData->displayMode == DisplayMode::Windowed) {
-    GetWindowRect(hwnd, &appData->windowedRect);
+    D3D11_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
+      .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+      .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
+      .Texture2D = {
+        .MipSlice = 0
+      }
+    };
+
+    hr = appData.d3dDevice->CreateRenderTargetView(backBuf.Get(), &rtvDesc, appData.backBufRtv.ReleaseAndGetAddressOf());
+    assert(SUCCEEDED(hr));
   }
 
-  appData->displayMode = displayMode;
 
-  switch (displayMode) {
+  auto ResizeSwapChain(AppData& appData) -> void {
+    auto hr{appData.backBufRtv.Reset()};
+    assert(SUCCEEDED(hr));
+
+    hr = appData.swapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, appData.swapChainFlags);
+    assert(SUCCEEDED(hr));
+
+    RecreateSwapChainRTV(appData);
+  }
+
+
+  auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
+    auto* const appData{reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA))};
+
+    if (appData->displayMode == DisplayMode::Windowed) {
+      GetWindowRect(hwnd, &appData->windowedRect);
+    }
+
+    appData->displayMode = displayMode;
+
+    switch (displayMode) {
     case DisplayMode::ExclusiveFullscreen: {
       BOOL fullscreenState;
       auto hr{appData->swapChain->GetFullscreenState(&fullscreenState, nullptr)};
@@ -189,16 +192,16 @@ auto ChangeDisplayMode(HWND const hwnd, DisplayMode const displayMode) -> void {
       SetWindowPos(hwnd, nullptr, appData->windowedRect.left, appData->windowedRect.top, width, height, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
       break;
     }
+    }
+
+    ResizeSwapChain(*appData);
   }
 
-  ResizeSwapChain(*appData);
-}
 
+  auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
+    auto* appData = reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
-auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
-  auto* appData = reinterpret_cast<AppData*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-
-  switch (msg) {
+    switch (msg) {
     case WM_CREATE: {
       appData = new AppData;
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(appData));
@@ -246,13 +249,17 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
       if (!(keyFlags & KF_REPEAT)) {
         if (wparam == 'F') {
           ChangeDisplayMode(hwnd, DisplayMode::ExclusiveFullscreen);
-        } else if (wparam == 'B') {
+        }
+        else if (wparam == 'B') {
           ChangeDisplayMode(hwnd, DisplayMode::WindowedBorderless);
-        } else if (wparam == 'W') {
+        }
+        else if (wparam == 'W') {
           ChangeDisplayMode(hwnd, DisplayMode::Windowed);
-        } else if (wparam == 'M') {
+        }
+        else if (wparam == 'M') {
           appData->minimizeBorderlessOnFocusLoss = !appData->minimizeBorderlessOnFocusLoss;
-        } else if (wparam == 'V') {
+        }
+        else if (wparam == 'V') {
           appData->syncInterval = 1 - appData->syncInterval;
         }
       }
@@ -263,7 +270,8 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
     case WM_ACTIVATEAPP: {
       if (wparam == TRUE && appData->displayMode == DisplayMode::ExclusiveFullscreen) {
         ChangeDisplayMode(hwnd, DisplayMode::ExclusiveFullscreen);
-      } else if (wparam == FALSE && appData->displayMode == DisplayMode::WindowedBorderless && appData->minimizeBorderlessOnFocusLoss) {
+      }
+      else if (wparam == FALSE && appData->displayMode == DisplayMode::WindowedBorderless && appData->minimizeBorderlessOnFocusLoss) {
         ShowWindow(hwnd, SW_MINIMIZE);
         return 0;
       }
@@ -276,10 +284,10 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
       PostQuitMessage(0);
       return 0;
     }
-  }
+    }
 
-  return DefWindowProcW(hwnd, msg, wparam, lparam);
-}
+    return DefWindowProcW(hwnd, msg, wparam, lparam);
+  }
 }
 
 
@@ -472,18 +480,27 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = appData->d3dDevice->CreatePixelShader(gPsBytes, ARRAYSIZE(gPsBytes), nullptr, pixelShader.GetAddressOf());
   assert(SUCCEEDED(hr));
 
-  D3D11_INPUT_ELEMENT_DESC constexpr inputElementDesc{
-    .SemanticName = "POS",
-    .SemanticIndex = 0,
-    .Format = DXGI_FORMAT_R32G32_FLOAT,
-    .InputSlot = 0,
-    .AlignedByteOffset = 0,
-    .InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA,
-    .InstanceDataStepRate = 0
-  };
+  ComPtr<ID3D11ShaderReflection> vsReflect;
+  hr = D3DReflect(gVsBytes, ARRAYSIZE(gVsBytes), IID_PPV_ARGS(&vsReflect));
+  assert(SUCCEEDED(hr));
+
+  D3D11_SHADER_DESC vsDesc;
+  hr = vsReflect->GetDesc(&vsDesc);
+  assert(SUCCEEDED(hr));
+
+  std::vector<D3D11_INPUT_ELEMENT_DESC> inputElements;
+  inputElements.reserve(vsDesc.InputParameters);
+
+  for (UINT i{0}; i < vsDesc.InputParameters; i++) {
+    D3D11_SIGNATURE_PARAMETER_DESC paramDesc;
+    hr = vsReflect->GetInputParameterDesc(i, &paramDesc);
+    assert(SUCCEEDED(hr));
+
+    inputElements.emplace_back(paramDesc.SemanticName, paramDesc.SemanticIndex, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0);
+  }
 
   ComPtr<ID3D11InputLayout> inputLayout;
-  hr = appData->d3dDevice->CreateInputLayout(&inputElementDesc, 1, gVsBytes, ARRAYSIZE(gVsBytes), inputLayout.GetAddressOf());
+  hr = appData->d3dDevice->CreateInputLayout(inputElements.data(), static_cast<UINT>(inputElements.size()), gVsBytes, ARRAYSIZE(gVsBytes), inputLayout.GetAddressOf());
   assert(SUCCEEDED(hr));
 
   std::array constexpr VERTEX_DATA{
