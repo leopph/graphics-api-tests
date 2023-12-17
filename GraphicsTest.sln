@@ -13,6 +13,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "D3D11Compute", "D3D11Comput
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "D3D11On12", "D3D11On12\D3D11On12.vcxproj", "{7DD548CB-89C7-4BD4-8C14-E20BF118C24F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Vulkan", "Vulkan\Vulkan.vcxproj", "{416FFD1A-272E-4D48-9E9D-C5A1992EDE0D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -39,6 +41,10 @@ Global
 		{7DD548CB-89C7-4BD4-8C14-E20BF118C24F}.Debug|x64.Build.0 = Debug|x64
 		{7DD548CB-89C7-4BD4-8C14-E20BF118C24F}.Release|x64.ActiveCfg = Release|x64
 		{7DD548CB-89C7-4BD4-8C14-E20BF118C24F}.Release|x64.Build.0 = Release|x64
+		{416FFD1A-272E-4D48-9E9D-C5A1992EDE0D}.Debug|x64.ActiveCfg = Debug|x64
+		{416FFD1A-272E-4D48-9E9D-C5A1992EDE0D}.Debug|x64.Build.0 = Debug|x64
+		{416FFD1A-272E-4D48-9E9D-C5A1992EDE0D}.Release|x64.ActiveCfg = Release|x64
+		{416FFD1A-272E-4D48-9E9D-C5A1992EDE0D}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
