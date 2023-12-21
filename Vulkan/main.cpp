@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <vector>
 
@@ -51,6 +53,99 @@ class HelloTriangleApplication {
   GLFWwindow* window_{nullptr};
   VkInstance instance_{VK_NULL_HANDLE};
   VkDebugUtilsMessengerEXT debug_messenger_{VK_NULL_HANDLE};
+  VkPhysicalDevice physical_device_{VK_NULL_HANDLE};
+  VkDevice device_{VK_NULL_HANDLE};
+  VkQueue graphics_queue_{VK_NULL_HANDLE};
+
+  auto CreateLogicalDevice() -> void {
+    auto const [graphics_family]{FindQueueFamilies(physical_device_)};
+
+    auto constexpr queue_priority{1.0f};
+
+    VkDeviceQueueCreateInfo const queue_create_info{
+      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .queueFamilyIndex = graphics_family.value(),
+      .queueCount = 1,
+      .pQueuePriorities = &queue_priority
+    };
+
+    VkPhysicalDeviceFeatures constexpr device_features{};
+
+    VkDeviceCreateInfo const create_info{
+      .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .queueCreateInfoCount = 1,
+      .pQueueCreateInfos = &queue_create_info,
+      .enabledLayerCount = kEnableValidationLayers ? static_cast<std::uint32_t>(kValidationLayers.size()) : 0,
+      .ppEnabledLayerNames = kEnableValidationLayers ? kValidationLayers.data() : nullptr,
+      .enabledExtensionCount = 0,
+      .ppEnabledExtensionNames = nullptr,
+      .pEnabledFeatures = &device_features
+    };
+
+    if (vkCreateDevice(physical_device_, &create_info, nullptr, &device_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create logical device."};
+    }
+
+    vkGetDeviceQueue(device_, graphics_family.value(), 0, &graphics_queue_);
+  }
+
+  struct QueueFamilyIndices {
+    std::optional<std::uint32_t> graphics_family;
+
+    [[nodiscard]] auto IsComplete() const -> bool {
+      return graphics_family.has_value();
+    }
+  };
+
+  [[nodiscard]] static auto FindQueueFamilies(VkPhysicalDevice const device) -> QueueFamilyIndices {
+    QueueFamilyIndices indices;
+
+    std::uint32_t queue_family_count{0};
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queue_families{queue_family_count};
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
+
+    for (auto const [idx, queue_family] : std::views::enumerate(queue_families) | std::views::as_const) {
+      if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+        indices.graphics_family = static_cast<std::uint32_t>(idx);
+        break;
+      }
+    }
+
+    return indices;
+  }
+
+  [[nodiscard]] static auto IsDeviceSuitable(VkPhysicalDevice const device) -> bool {
+    return FindQueueFamilies(device).IsComplete();
+  }
+
+  auto PickPhysicalDevice() -> void {
+    std::uint32_t device_count{0};
+    if (vkEnumeratePhysicalDevices(instance_, &device_count, nullptr) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query physical device count."};
+    }
+
+    std::vector<VkPhysicalDevice> devices{device_count};
+    if (vkEnumeratePhysicalDevices(instance_, &device_count, devices.data()) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query physical devices."};
+    }
+
+    for (auto const& device : devices) {
+      if (IsDeviceSuitable(device)) {
+        physical_device_ = device;
+        break;
+      }
+    }
+
+    if (physical_device_ == VK_NULL_HANDLE) {
+      throw std::runtime_error{"Failed to find a suitable GPU."};
+    }
+  }
 
   static auto PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& create_info) -> void {
     create_info = VkDebugUtilsMessengerCreateInfoEXT{
@@ -190,6 +285,8 @@ class HelloTriangleApplication {
   auto InitVulkan() -> void {
     CreateInstance();
     SetupDebugMessenger();
+    PickPhysicalDevice();
+    CreateLogicalDevice();
   }
 
   auto MainLoop() const -> void {
@@ -199,6 +296,8 @@ class HelloTriangleApplication {
   }
 
   auto Cleanup() const -> void {
+    vkDestroyDevice(device_, nullptr);
+
     if constexpr (kEnableValidationLayers) {
       DestroyDebugUtilsMessengerEXT(instance_, debug_messenger_, nullptr);
     }
