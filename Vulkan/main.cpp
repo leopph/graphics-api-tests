@@ -2,13 +2,17 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <forward_list>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -24,6 +28,9 @@ namespace {
 #else
     true
 #endif
+  };
+  std::vector const kDeviceExtensions{
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
   };
 
   VKAPI_ATTR auto VKAPI_CALL DebugCallback(
@@ -59,6 +66,141 @@ class HelloTriangleApplication {
   VkQueue graphics_queue_{VK_NULL_HANDLE};
   VkSurfaceKHR surface_{VK_NULL_HANDLE};
   VkQueue present_queue_{VK_NULL_HANDLE};
+  VkSwapchainKHR swap_chain_{VK_NULL_HANDLE};
+  std::vector<VkImage> swap_chain_images_;
+  VkFormat swap_chain_image_format_{};
+  VkExtent2D swap_chain_extent_{};
+
+  auto CreateSwapChain() -> void {
+    auto const swap_chain_support{QuerySwapChainSupport(physical_device_)};
+    auto const surface_format{ChooseSwapSurfaceFormat(swap_chain_support.formats)};
+    auto const present_mode{ChooseSwapPresentMode(swap_chain_support.present_modes)};
+    auto const extent{ChooseSwapExtent(swap_chain_support.capabilities)};
+
+    auto const image_count{
+      [&swap_chain_support] {
+        auto ret{swap_chain_support.capabilities.minImageCount + 1};
+
+        if (swap_chain_support.capabilities.maxImageCount > 0) {
+          ret = std::min(ret, swap_chain_support.capabilities.maxImageCount);
+        }
+
+        return ret;
+      }()
+    };
+
+    auto const [graphics_family_idx, present_family_idx]{FindQueueFamilies(physical_device_)};
+    std::array const queue_family_indices{graphics_family_idx.value(), present_family_idx.value()};
+
+    VkSwapchainCreateInfoKHR const create_info{
+      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+      .pNext = nullptr,
+      .flags = 0,
+      .surface = surface_,
+      .minImageCount = image_count,
+      .imageFormat = surface_format.format,
+      .imageColorSpace = surface_format.colorSpace,
+      .imageExtent = extent,
+      .imageArrayLayers = 1,
+      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+      .imageSharingMode = graphics_family_idx != present_family_idx ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+      .queueFamilyIndexCount = static_cast<std::uint32_t>(graphics_family_idx != present_family_idx ? 2 : 0),
+      .pQueueFamilyIndices = graphics_family_idx != present_family_idx ? queue_family_indices.data() : nullptr,
+      .preTransform = swap_chain_support.capabilities.currentTransform,
+      .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+      .presentMode = present_mode,
+      .clipped = VK_TRUE,
+      .oldSwapchain = VK_NULL_HANDLE
+    };
+
+    if (vkCreateSwapchainKHR(device_, &create_info, nullptr, &swap_chain_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create swap chain!"};
+    }
+
+    std::uint32_t final_image_count{image_count};
+    if (vkGetSwapchainImagesKHR(device_, swap_chain_, &final_image_count, nullptr) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to retrieve final swap chain image count."};
+    }
+
+    swap_chain_images_.resize(final_image_count);
+    if (vkGetSwapchainImagesKHR(device_, swap_chain_, &final_image_count, swap_chain_images_.data()) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to retrieve swap chain images."};
+    }
+
+    swap_chain_image_format_ = surface_format.format;
+    swap_chain_extent_ = extent;
+  }
+
+  [[nodiscard]] auto ChooseSwapExtent(VkSurfaceCapabilitiesKHR const& capabilities) const -> VkExtent2D {
+    if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+      return capabilities.currentExtent;
+    }
+
+    int width;
+    int height;
+    glfwGetFramebufferSize(window_, &width, &height);
+
+    return VkExtent2D{
+      .width = std::clamp(static_cast<std::uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+      .height = std::clamp(static_cast<std::uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+    };
+  }
+
+  [[nodiscard]] static auto ChooseSwapPresentMode(std::span<VkPresentModeKHR const> const available_present_modes) -> VkPresentModeKHR {
+    for (auto const& mode : available_present_modes) {
+      if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+        return mode;
+      }
+    }
+
+    return VK_PRESENT_MODE_FIFO_KHR;
+  }
+
+  [[nodiscard]] static auto ChooseSwapSurfaceFormat(std::span<VkSurfaceFormatKHR const> const available_formats) -> VkSurfaceFormatKHR {
+    for (auto const& format : available_formats) {
+      if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        return format;
+      }
+    }
+
+    return available_formats[0];
+  }
+
+  struct SwapChainSupportDetails {
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> present_modes;
+  };
+
+  [[nodiscard]] auto QuerySwapChainSupport(VkPhysicalDevice const device) const -> SwapChainSupportDetails {
+    SwapChainSupportDetails details;
+
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_, &details.capabilities) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query device surface capabilities."};
+    }
+
+    std::uint32_t format_count{0};
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &format_count, nullptr) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query surface format count."};
+    }
+
+    details.formats.resize(format_count);
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &format_count, details.formats.data()) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query surface formats."};
+    }
+
+    std::uint32_t present_mode_count{0};
+    if (vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &present_mode_count, nullptr) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query surface present mode count."};
+    }
+
+    details.present_modes.resize(present_mode_count);
+    if (vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &present_mode_count, details.present_modes.data()) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query surface present modes."};
+    }
+
+    return details;
+  }
 
   auto CreateSurface() -> void {
     if (glfwCreateWindowSurface(instance_, window_, nullptr, &surface_) != VK_SUCCESS) {
@@ -94,8 +236,8 @@ class HelloTriangleApplication {
       .pQueueCreateInfos = queue_create_infos.data(),
       .enabledLayerCount = kEnableValidationLayers ? static_cast<std::uint32_t>(kValidationLayers.size()) : 0,
       .ppEnabledLayerNames = kEnableValidationLayers ? kValidationLayers.data() : nullptr,
-      .enabledExtensionCount = 0,
-      .ppEnabledExtensionNames = nullptr,
+      .enabledExtensionCount = static_cast<std::uint32_t>(kDeviceExtensions.size()),
+      .ppEnabledExtensionNames = kDeviceExtensions.data(),
       .pEnabledFeatures = &device_features
     };
 
@@ -149,8 +291,40 @@ class HelloTriangleApplication {
     return indices;
   }
 
+  [[nodiscard]] static auto CheckDeviceExtensionSupport(VkPhysicalDevice const device) -> bool {
+    std::uint32_t extensions_count{0};
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &extensions_count, nullptr) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query device extension count."};
+    }
+
+    std::vector<VkExtensionProperties> available_extensions{extensions_count};
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &extensions_count, available_extensions.data()) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to query device extensions."};
+    }
+
+    std::set<std::string> required_extensions{kDeviceExtensions.begin(), kDeviceExtensions.end()};
+
+    for (auto const& [extensionName, specVersion] : available_extensions) {
+      required_extensions.erase(extensionName);
+    }
+
+    return required_extensions.empty();
+  }
+
   [[nodiscard]] auto IsDeviceSuitable(VkPhysicalDevice const device) const -> bool {
-    return FindQueueFamilies(device).IsComplete();
+    auto const extensions_supported{CheckDeviceExtensionSupport(device)};
+    auto const swap_chain_adequate{
+      [this, device, extensions_supported] {
+        if (!extensions_supported) {
+          return false;
+        }
+
+        auto const [capabilities, formats, present_modes]{QuerySwapChainSupport(device)};
+        return !formats.empty() && !present_modes.empty();
+      }()
+    };
+
+    return FindQueueFamilies(device).IsComplete() && extensions_supported && swap_chain_adequate;
   }
 
   auto PickPhysicalDevice() -> void {
@@ -317,6 +491,7 @@ class HelloTriangleApplication {
     CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
+    CreateSwapChain();
   }
 
   auto MainLoop() const -> void {
@@ -325,7 +500,10 @@ class HelloTriangleApplication {
     }
   }
 
-  auto Cleanup() const -> void {
+  auto
+  Cleanup() const -> void {
+    vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+
     vkDestroyDevice(device_, nullptr);
 
     vkDestroySurfaceKHR(instance_, surface_, nullptr);
