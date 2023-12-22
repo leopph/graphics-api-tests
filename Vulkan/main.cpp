@@ -70,6 +70,39 @@ class HelloTriangleApplication {
   std::vector<VkImage> swap_chain_images_;
   VkFormat swap_chain_image_format_{};
   VkExtent2D swap_chain_extent_{};
+  std::vector<VkImageView> swap_chain_image_views_;
+
+  auto CreateImageViews() -> void {
+    swap_chain_image_views_.resize(swap_chain_images_.size());
+
+    for (auto i{0}; i < swap_chain_images_.size(); i++) {
+      VkImageViewCreateInfo const create_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .image = swap_chain_images_[i],
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = swap_chain_image_format_,
+        .components = {
+          .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+          .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+          .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+          .a = VK_COMPONENT_SWIZZLE_IDENTITY
+        },
+        .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1
+        }
+      };
+
+      if (vkCreateImageView(device_, &create_info, nullptr, &swap_chain_image_views_[i]) != VK_SUCCESS) {
+        throw std::runtime_error{"Failed to create swap chain image view."};
+      }
+    }
+  }
 
   auto CreateSwapChain() -> void {
     auto const swap_chain_support{QuerySwapChainSupport(physical_device_)};
@@ -492,6 +525,7 @@ class HelloTriangleApplication {
     PickPhysicalDevice();
     CreateLogicalDevice();
     CreateSwapChain();
+    CreateImageViews();
   }
 
   auto MainLoop() const -> void {
@@ -502,6 +536,10 @@ class HelloTriangleApplication {
 
   auto
   Cleanup() const -> void {
+    for (auto const image_view : swap_chain_image_views_) {
+      vkDestroyImageView(device_, image_view, nullptr);
+    }
+
     vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
 
     vkDestroyDevice(device_, nullptr);
