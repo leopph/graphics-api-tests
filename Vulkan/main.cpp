@@ -7,7 +7,6 @@
 #include <cstring>
 #include <iostream>
 #include <optional>
-#include <ranges>
 #include <stdexcept>
 #include <vector>
 
@@ -110,11 +109,13 @@ class HelloTriangleApplication {
     std::vector<VkQueueFamilyProperties> queue_families{queue_family_count};
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
 
-    for (auto const [idx, queue_family] : std::views::enumerate(queue_families) | std::views::as_const) {
-      if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+    for (std::uint32_t idx{0}; auto const& [queueFlags, queueCount, timestampValidBits, minImageTransferGranularity] : queue_families) {
+      if (queueFlags & VK_QUEUE_GRAPHICS_BIT) {
         indices.graphics_family = static_cast<std::uint32_t>(idx);
         break;
       }
+
+      ++idx;
     }
 
     return indices;
