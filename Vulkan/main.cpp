@@ -1,12 +1,14 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -55,20 +57,32 @@ class HelloTriangleApplication {
   VkPhysicalDevice physical_device_{VK_NULL_HANDLE};
   VkDevice device_{VK_NULL_HANDLE};
   VkQueue graphics_queue_{VK_NULL_HANDLE};
+  VkSurfaceKHR surface_{VK_NULL_HANDLE};
+  VkQueue present_queue_{VK_NULL_HANDLE};
+
+  auto CreateSurface() -> void {
+    if (glfwCreateWindowSurface(instance_, window_, nullptr, &surface_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create window surface."};
+    }
+  }
 
   auto CreateLogicalDevice() -> void {
-    auto const [graphics_family]{FindQueueFamilies(physical_device_)};
+    auto const [graphics_family_idx, present_family_idx]{FindQueueFamilies(physical_device_)};
+    std::set const unique_queue_family_indices{graphics_family_idx.value(), present_family_idx.value()};
 
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
     auto constexpr queue_priority{1.0f};
 
-    VkDeviceQueueCreateInfo const queue_create_info{
-      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
-      .queueFamilyIndex = graphics_family.value(),
-      .queueCount = 1,
-      .pQueuePriorities = &queue_priority
-    };
+    std::ranges::transform(unique_queue_family_indices, std::back_inserter(queue_create_infos), [&queue_priority](std::uint32_t const queue_family_idx) {
+      return VkDeviceQueueCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .queueFamilyIndex = queue_family_idx,
+        .queueCount = 1,
+        .pQueuePriorities = &queue_priority
+      };
+    });
 
     VkPhysicalDeviceFeatures constexpr device_features{};
 
@@ -76,8 +90,8 @@ class HelloTriangleApplication {
       .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
       .pNext = nullptr,
       .flags = 0,
-      .queueCreateInfoCount = 1,
-      .pQueueCreateInfos = &queue_create_info,
+      .queueCreateInfoCount = static_cast<std::uint32_t>(queue_create_infos.size()),
+      .pQueueCreateInfos = queue_create_infos.data(),
       .enabledLayerCount = kEnableValidationLayers ? static_cast<std::uint32_t>(kValidationLayers.size()) : 0,
       .ppEnabledLayerNames = kEnableValidationLayers ? kValidationLayers.data() : nullptr,
       .enabledExtensionCount = 0,
@@ -89,18 +103,20 @@ class HelloTriangleApplication {
       throw std::runtime_error{"Failed to create logical device."};
     }
 
-    vkGetDeviceQueue(device_, graphics_family.value(), 0, &graphics_queue_);
+    vkGetDeviceQueue(device_, graphics_family_idx.value(), 0, &graphics_queue_);
+    vkGetDeviceQueue(device_, present_family_idx.value(), 0, &present_queue_);
   }
 
   struct QueueFamilyIndices {
     std::optional<std::uint32_t> graphics_family;
+    std::optional<std::uint32_t> present_family;
 
     [[nodiscard]] auto IsComplete() const -> bool {
-      return graphics_family.has_value();
+      return graphics_family.has_value() && present_family.has_value();
     }
   };
 
-  [[nodiscard]] static auto FindQueueFamilies(VkPhysicalDevice const device) -> QueueFamilyIndices {
+  [[nodiscard]] auto FindQueueFamilies(VkPhysicalDevice const device) const -> QueueFamilyIndices {
     QueueFamilyIndices indices;
 
     std::uint32_t queue_family_count{0};
@@ -111,7 +127,19 @@ class HelloTriangleApplication {
 
     for (std::uint32_t idx{0}; auto const& [queueFlags, queueCount, timestampValidBits, minImageTransferGranularity] : queue_families) {
       if (queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-        indices.graphics_family = static_cast<std::uint32_t>(idx);
+        indices.graphics_family = idx;
+      }
+
+      VkBool32 present_supported{VK_FALSE};
+      if (vkGetPhysicalDeviceSurfaceSupportKHR(device, idx, surface_, &present_supported) != VK_SUCCESS) {
+        throw std::runtime_error{"Failed to query queue family present support."};
+      }
+
+      if (present_supported) {
+        indices.present_family = idx;
+      }
+
+      if (indices.IsComplete()) {
         break;
       }
 
@@ -121,7 +149,7 @@ class HelloTriangleApplication {
     return indices;
   }
 
-  [[nodiscard]] static auto IsDeviceSuitable(VkPhysicalDevice const device) -> bool {
+  [[nodiscard]] auto IsDeviceSuitable(VkPhysicalDevice const device) const -> bool {
     return FindQueueFamilies(device).IsComplete();
   }
 
@@ -286,6 +314,7 @@ class HelloTriangleApplication {
   auto InitVulkan() -> void {
     CreateInstance();
     SetupDebugMessenger();
+    CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
   }
@@ -298,6 +327,8 @@ class HelloTriangleApplication {
 
   auto Cleanup() const -> void {
     vkDestroyDevice(device_, nullptr);
+
+    vkDestroySurfaceKHR(instance_, surface_, nullptr);
 
     if constexpr (kEnableValidationLayers) {
       DestroyDebugUtilsMessengerEXT(instance_, debug_messenger_, nullptr);
