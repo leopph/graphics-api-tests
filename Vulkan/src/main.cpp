@@ -73,6 +73,56 @@ class HelloTriangleApplication {
   VkFormat swap_chain_image_format_{};
   VkExtent2D swap_chain_extent_{};
   std::vector<VkImageView> swap_chain_image_views_;
+  VkRenderPass render_pass_{VK_NULL_HANDLE};
+  VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
+  VkPipeline pipeline_{VK_NULL_HANDLE};
+
+  auto CreateRenderPass() -> void {
+    VkAttachmentDescription const color_attachment{
+      .flags = 0,
+      .format = swap_chain_image_format_,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    };
+
+    VkAttachmentReference constexpr color_attachment_ref{
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    };
+
+    VkSubpassDescription const subpass{
+      .flags = 0,
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+      .inputAttachmentCount = 0,
+      .pInputAttachments = nullptr,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &color_attachment_ref,
+      .pResolveAttachments = nullptr,
+      .pDepthStencilAttachment = nullptr,
+      .preserveAttachmentCount = 0,
+      .pPreserveAttachments = nullptr
+    };
+
+    VkRenderPassCreateInfo const create_info{
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .attachmentCount = 1,
+    .pAttachments = &color_attachment,
+    .subpassCount = 1,
+    .pSubpasses = &subpass,
+    .dependencyCount = 0,
+    .pDependencies = nullptr};
+
+    if (vkCreateRenderPass(device_, &create_info, nullptr, &render_pass_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create render pass."};
+    }
+  }
 
   [[nodiscard]] auto CreateShaderModule(std::span<std::uint32_t const> const code) const -> VkShaderModule {
     VkShaderModuleCreateInfo const create_info{
@@ -117,6 +167,150 @@ class HelloTriangleApplication {
     };
 
     std::array const shader_stages{vert_shader_stage_info, frag_shader_stage_info};
+
+    std::array constexpr dynamic_states{
+      VK_DYNAMIC_STATE_VIEWPORT,
+      VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo const dynamic_state_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
+      .pDynamicStates = dynamic_states.data()
+    };
+
+    VkPipelineVertexInputStateCreateInfo constexpr vertex_input_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .vertexBindingDescriptionCount = 0,
+      .pVertexBindingDescriptions = nullptr,
+      .vertexAttributeDescriptionCount = 0,
+      .pVertexAttributeDescriptions = nullptr
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo constexpr input_assembly_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+      .primitiveRestartEnable = VK_FALSE
+    };
+
+    VkViewport const viewport{
+      .x = 0,
+      .y = 0,
+      .width = static_cast<float>(swap_chain_extent_.width),
+      .height = static_cast<float>(swap_chain_extent_.height),
+      .minDepth = 0,
+      .maxDepth = 1
+    };
+
+    VkRect2D const scissor{
+      .offset{0, 0},
+      .extent = swap_chain_extent_
+    };
+
+    VkPipelineViewportStateCreateInfo const viewport_state_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .viewportCount = 1,
+      .pViewports = &viewport,
+      .scissorCount = 1,
+      .pScissors = &scissor
+    };
+
+    VkPipelineRasterizationStateCreateInfo constexpr raster_state_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .depthClampEnable = VK_FALSE,
+      .rasterizerDiscardEnable = VK_FALSE,
+      .polygonMode = VK_POLYGON_MODE_FILL,
+      .cullMode = VK_CULL_MODE_BACK_BIT,
+      .frontFace = VK_FRONT_FACE_CLOCKWISE,
+      .depthBiasEnable = VK_FALSE,
+      .depthBiasConstantFactor = 0,
+      .depthBiasClamp = 0,
+      .depthBiasSlopeFactor = 0,
+      .lineWidth = 1.0f
+    };
+
+    VkPipelineMultisampleStateCreateInfo constexpr ms_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+      .sampleShadingEnable = VK_FALSE,
+      .minSampleShading = 1,
+      .pSampleMask = nullptr,
+      .alphaToCoverageEnable = VK_FALSE,
+      .alphaToOneEnable = VK_FALSE
+    };
+
+    VkPipelineColorBlendAttachmentState constexpr color_blend_attachment{
+      .blendEnable = VK_FALSE,
+      .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+      .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+      .colorBlendOp = VK_BLEND_OP_ADD,
+      .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+      .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+      .alphaBlendOp = VK_BLEND_OP_ADD,
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+
+    VkPipelineColorBlendStateCreateInfo const color_blend_state_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .logicOpEnable = VK_FALSE,
+      .logicOp = VK_LOGIC_OP_COPY,
+      .attachmentCount = 1,
+      .pAttachments = &color_blend_attachment,
+      .blendConstants = {0, 0, 0, 0}
+    };
+
+    VkPipelineLayoutCreateInfo constexpr pipeline_layout_create_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .setLayoutCount = 0,
+      .pSetLayouts = nullptr,
+      .pushConstantRangeCount = 0,
+      .pPushConstantRanges = nullptr
+    };
+
+    if (vkCreatePipelineLayout(device_, &pipeline_layout_create_info, nullptr, &pipeline_layout_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create pipeline layout."};
+    }
+
+    VkGraphicsPipelineCreateInfo const pipeline_create_info{
+    .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .stageCount = static_cast<std::uint32_t>(shader_stages.size()),
+    .pStages = shader_stages.data(),
+    .pVertexInputState = &vertex_input_create_info,
+    .pInputAssemblyState = &input_assembly_create_info,
+    .pTessellationState = nullptr,
+    .pViewportState = &viewport_state_create_info,
+    .pRasterizationState = &raster_state_create_info,
+    .pMultisampleState = &ms_create_info,
+    .pDepthStencilState = nullptr,
+    .pColorBlendState = &color_blend_state_create_info,
+    .pDynamicState = &dynamic_state_create_info,
+    .layout = pipeline_layout_,
+    .renderPass = render_pass_,
+    .subpass = 0,
+    .basePipelineHandle = VK_NULL_HANDLE,
+    .basePipelineIndex = -1 };
+
+    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create pipeline."};
+    }
 
     vkDestroyShaderModule(device_, frag_shader_module, nullptr);
     vkDestroyShaderModule(device_, vert_shader_module, nullptr);
@@ -577,6 +771,7 @@ class HelloTriangleApplication {
     CreateLogicalDevice();
     CreateSwapChain();
     CreateImageViews();
+    CreateRenderPass();
     CreateGraphicsPipeline();
   }
 
@@ -588,6 +783,12 @@ class HelloTriangleApplication {
 
   auto
   Cleanup() const -> void {
+    vkDestroyPipeline(device_, pipeline_, nullptr);
+
+    vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+
+    vkDestroyRenderPass(device_, render_pass_, nullptr);
+
     for (auto const image_view : swap_chain_image_views_) {
       vkDestroyImageView(device_, image_view, nullptr);
     }
