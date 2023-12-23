@@ -76,6 +76,29 @@ class HelloTriangleApplication {
   VkRenderPass render_pass_{VK_NULL_HANDLE};
   VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
   VkPipeline pipeline_{VK_NULL_HANDLE};
+  std::vector<VkFramebuffer> swap_chain_framebuffers_;
+
+  auto CreateFramebuffers() -> void {
+    swap_chain_framebuffers_.resize(swap_chain_image_views_.size());
+
+    for (std::size_t i{0}; i < swap_chain_image_views_.size(); i++) {
+      VkFramebufferCreateInfo const create_info{
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .renderPass = render_pass_,
+        .attachmentCount = 1,
+        .pAttachments = &swap_chain_image_views_[i],
+        .width = swap_chain_extent_.width,
+        .height = swap_chain_extent_.height,
+        .layers = 1
+      };
+
+      if (vkCreateFramebuffer(device_, &create_info, nullptr, &swap_chain_framebuffers_[i]) != VK_SUCCESS) {
+        throw std::runtime_error{"Failed to create framebuffer."};
+      }
+    }
+  }
 
   auto CreateRenderPass() -> void {
     VkAttachmentDescription const color_attachment{
@@ -109,15 +132,16 @@ class HelloTriangleApplication {
     };
 
     VkRenderPassCreateInfo const create_info{
-    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-    .pNext = nullptr,
-    .flags = 0,
-    .attachmentCount = 1,
-    .pAttachments = &color_attachment,
-    .subpassCount = 1,
-    .pSubpasses = &subpass,
-    .dependencyCount = 0,
-    .pDependencies = nullptr};
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .attachmentCount = 1,
+      .pAttachments = &color_attachment,
+      .subpassCount = 1,
+      .pSubpasses = &subpass,
+      .dependencyCount = 0,
+      .pDependencies = nullptr
+    };
 
     if (vkCreateRenderPass(device_, &create_info, nullptr, &render_pass_) != VK_SUCCESS) {
       throw std::runtime_error{"Failed to create render pass."};
@@ -259,7 +283,7 @@ class HelloTriangleApplication {
       .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
       .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
       .alphaBlendOp = VK_BLEND_OP_ADD,
-      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_A_BIT
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
     };
 
     VkPipelineColorBlendStateCreateInfo const color_blend_state_create_info{
@@ -288,25 +312,26 @@ class HelloTriangleApplication {
     }
 
     VkGraphicsPipelineCreateInfo const pipeline_create_info{
-    .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-    .pNext = nullptr,
-    .flags = 0,
-    .stageCount = static_cast<std::uint32_t>(shader_stages.size()),
-    .pStages = shader_stages.data(),
-    .pVertexInputState = &vertex_input_create_info,
-    .pInputAssemblyState = &input_assembly_create_info,
-    .pTessellationState = nullptr,
-    .pViewportState = &viewport_state_create_info,
-    .pRasterizationState = &raster_state_create_info,
-    .pMultisampleState = &ms_create_info,
-    .pDepthStencilState = nullptr,
-    .pColorBlendState = &color_blend_state_create_info,
-    .pDynamicState = &dynamic_state_create_info,
-    .layout = pipeline_layout_,
-    .renderPass = render_pass_,
-    .subpass = 0,
-    .basePipelineHandle = VK_NULL_HANDLE,
-    .basePipelineIndex = -1 };
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .stageCount = static_cast<std::uint32_t>(shader_stages.size()),
+      .pStages = shader_stages.data(),
+      .pVertexInputState = &vertex_input_create_info,
+      .pInputAssemblyState = &input_assembly_create_info,
+      .pTessellationState = nullptr,
+      .pViewportState = &viewport_state_create_info,
+      .pRasterizationState = &raster_state_create_info,
+      .pMultisampleState = &ms_create_info,
+      .pDepthStencilState = nullptr,
+      .pColorBlendState = &color_blend_state_create_info,
+      .pDynamicState = &dynamic_state_create_info,
+      .layout = pipeline_layout_,
+      .renderPass = render_pass_,
+      .subpass = 0,
+      .basePipelineHandle = VK_NULL_HANDLE,
+      .basePipelineIndex = -1
+    };
 
     if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline_) != VK_SUCCESS) {
       throw std::runtime_error{"Failed to create pipeline."};
@@ -319,7 +344,7 @@ class HelloTriangleApplication {
   auto CreateImageViews() -> void {
     swap_chain_image_views_.resize(swap_chain_images_.size());
 
-    for (auto i{0}; i < swap_chain_images_.size(); i++) {
+    for (std::size_t i{0}; i < swap_chain_images_.size(); i++) {
       VkImageViewCreateInfo const create_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .pNext = nullptr,
@@ -773,6 +798,7 @@ class HelloTriangleApplication {
     CreateImageViews();
     CreateRenderPass();
     CreateGraphicsPipeline();
+    CreateFramebuffers();
   }
 
   auto MainLoop() const -> void {
@@ -781,8 +807,11 @@ class HelloTriangleApplication {
     }
   }
 
-  auto
-  Cleanup() const -> void {
+  auto Cleanup() const -> void {
+    for (auto const framebuffer : swap_chain_framebuffers_) {
+      vkDestroyFramebuffer(device_, framebuffer, nullptr);
+    }
+
     vkDestroyPipeline(device_, pipeline_, nullptr);
 
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
