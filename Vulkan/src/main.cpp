@@ -77,6 +77,170 @@ class HelloTriangleApplication {
   VkPipelineLayout pipeline_layout_{VK_NULL_HANDLE};
   VkPipeline pipeline_{VK_NULL_HANDLE};
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
+  VkCommandPool command_pool_{VK_NULL_HANDLE};
+  VkCommandBuffer command_buffer_{VK_NULL_HANDLE};
+  VkSemaphore image_available_semaphore_{VK_NULL_HANDLE};
+  VkSemaphore render_finished_semaphore_{VK_NULL_HANDLE};
+  VkFence in_flight_fence_{VK_NULL_HANDLE};
+
+  auto CreateSyncObjects() -> void {
+    VkSemaphoreCreateInfo constexpr semaphore_create_info{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0
+    };
+
+    VkFenceCreateInfo constexpr fence_create_info{
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = VK_FENCE_CREATE_SIGNALED_BIT
+    };
+
+    if (vkCreateSemaphore(device_, &semaphore_create_info, nullptr, &image_available_semaphore_) != VK_SUCCESS ||
+      vkCreateSemaphore(device_, &semaphore_create_info, nullptr, &render_finished_semaphore_) != VK_SUCCESS ||
+      vkCreateFence(device_, &fence_create_info, nullptr, &in_flight_fence_)) {
+      throw std::runtime_error{"Failed to create sync objects."};
+    }
+  }
+
+  auto DrawFrame() const -> void {
+    if (vkWaitForFences(device_, 1, &in_flight_fence_, VK_TRUE, std::numeric_limits<std::uint64_t>::max()) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to wait for fence."};
+    }
+
+    if (vkResetFences(device_, 1, &in_flight_fence_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to reset fence."};
+    }
+
+    std::uint32_t img_idx;
+    if (vkAcquireNextImageKHR(device_, swap_chain_, std::numeric_limits<std::uint64_t>::max(), image_available_semaphore_, VK_NULL_HANDLE, &img_idx) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to acquire next swapchain image."};
+    }
+
+    if (vkResetCommandBuffer(command_buffer_, 0) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to reset command buffer."};
+    }
+
+    RecordCommandBuffer(command_buffer_, img_idx);
+
+    std::array const wait_semaphores{image_available_semaphore_};
+    std::array const signal_semaphores{render_finished_semaphore_};
+    std::array<VkPipelineStageFlags, 1> constexpr wait_stages{VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    VkSubmitInfo const submit_info{
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .waitSemaphoreCount = static_cast<std::uint32_t>(wait_semaphores.size()),
+      .pWaitSemaphores = wait_semaphores.data(),
+      .pWaitDstStageMask = wait_stages.data(),
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer_,
+      .signalSemaphoreCount = static_cast<std::uint32_t>(signal_semaphores.size()),
+      .pSignalSemaphores = signal_semaphores.data()
+    };
+
+    if (vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fence_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to submit command buffer."};
+    }
+
+    VkPresentInfoKHR const present_info{
+      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+      .pNext = nullptr,
+      .waitSemaphoreCount = static_cast<std::uint32_t>(signal_semaphores.size()),
+      .pWaitSemaphores = signal_semaphores.data(),
+      .swapchainCount = 1,
+      .pSwapchains = &swap_chain_,
+      .pImageIndices = &img_idx,
+      .pResults = nullptr
+    };
+
+    if (vkQueuePresentKHR(present_queue_, &present_info) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to present."};
+    }
+  }
+
+  auto RecordCommandBuffer(VkCommandBuffer const command_buffer, std::uint32_t const img_idx) const -> void {
+    VkCommandBufferBeginInfo constexpr begin_info{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .pInheritanceInfo = nullptr
+    };
+
+    if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to begin command buffer."};
+    }
+
+    VkClearValue constexpr clear_value{.color = {.float32 = {0, 0, 0, 1}}};
+
+    VkRenderPassBeginInfo const render_pass_begin_info{
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .pNext = nullptr,
+      .renderPass = render_pass_,
+      .framebuffer = swap_chain_framebuffers_[img_idx],
+      .renderArea = {
+        .offset = {0, 0},
+        .extent = swap_chain_extent_
+      },
+      .clearValueCount = 1,
+      .pClearValues = &clear_value
+    };
+
+    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+
+    VkViewport const viewport{
+      .x = 0,
+      .y = 0,
+      .width = static_cast<float>(swap_chain_extent_.width),
+      .height = static_cast<float>(swap_chain_extent_.height),
+      .minDepth = 0,
+      .maxDepth = 1
+    };
+
+    VkRect2D const scissor{
+      .offset = {0, 0},
+      .extent = swap_chain_extent_
+    };
+
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+    vkCmdDraw(command_buffer, 3, 1, 0, 0);
+    vkCmdEndRenderPass(command_buffer);
+
+    if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to end command buffer."};
+    }
+  }
+
+  auto CreateCommandBuffer() -> void {
+    VkCommandBufferAllocateInfo const alloc_info{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .pNext = nullptr,
+      .commandPool = command_pool_,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 1
+    };
+
+    if (vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create command buffer."};
+    }
+  }
+
+  auto CreateCommandPool() -> void {
+    auto const [graphics_family_idx, present_family_idx]{FindQueueFamilies(physical_device_)};
+
+    VkCommandPoolCreateInfo const create_info{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+      .queueFamilyIndex = graphics_family_idx.value()
+    };
+
+    if (vkCreateCommandPool(device_, &create_info, nullptr, &command_pool_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create command pool."};
+    }
+  }
 
   auto CreateFramebuffers() -> void {
     swap_chain_framebuffers_.resize(swap_chain_image_views_.size());
@@ -131,6 +295,16 @@ class HelloTriangleApplication {
       .pPreserveAttachments = nullptr
     };
 
+    VkSubpassDependency constexpr subpass_dependency{
+      .srcSubpass = VK_SUBPASS_EXTERNAL,
+      .dstSubpass = 0,
+      .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      .srcAccessMask = 0,
+      .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .dependencyFlags = 0
+    };
+
     VkRenderPassCreateInfo const create_info{
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
       .pNext = nullptr,
@@ -139,8 +313,8 @@ class HelloTriangleApplication {
       .pAttachments = &color_attachment,
       .subpassCount = 1,
       .pSubpasses = &subpass,
-      .dependencyCount = 0,
-      .pDependencies = nullptr
+      .dependencyCount = 1,
+      .pDependencies = &subpass_dependency
     };
 
     if (vkCreateRenderPass(device_, &create_info, nullptr, &render_pass_) != VK_SUCCESS) {
@@ -799,15 +973,29 @@ class HelloTriangleApplication {
     CreateRenderPass();
     CreateGraphicsPipeline();
     CreateFramebuffers();
+    CreateCommandPool();
+    CreateCommandBuffer();
+    CreateSyncObjects();
   }
 
   auto MainLoop() const -> void {
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
+      DrawFrame();
+    }
+
+    if (vkDeviceWaitIdle(device_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to wait for device idle."};
     }
   }
 
   auto Cleanup() const -> void {
+    vkDestroyFence(device_, in_flight_fence_, nullptr);
+    vkDestroySemaphore(device_, render_finished_semaphore_, nullptr);
+    vkDestroySemaphore(device_, image_available_semaphore_, nullptr);
+
+    vkDestroyCommandPool(device_, command_pool_, nullptr);
+
     for (auto const framebuffer : swap_chain_framebuffers_) {
       vkDestroyFramebuffer(device_, framebuffer, nullptr);
     }
