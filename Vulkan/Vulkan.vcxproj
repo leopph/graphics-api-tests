@@ -69,6 +69,11 @@
       <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <CustomBuild>
+      <Command>glslang -V --vn g_%(Filename)_bin -o %(RelativeDir)\generated\%(Filename).h %(FullPath)</Command>
+      <Message>%(Filename)%(Extension)</Message>
+      <Outputs>%(RelativeDir)\generated\%(Filename).h</Outputs>
+    </CustomBuild>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -89,12 +94,23 @@
       <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <CustomBuild>
+      <Command>glslang -V --vn g_%(Filename)_bin -o %(RelativeDir)\generated\%(Filename).h %(FullPath)</Command>
+      <Message>%(Filename)%(Extension)</Message>
+      <Outputs>%(RelativeDir)\generated\%(Filename).h</Outputs>
+    </CustomBuild>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <CustomBuild Include="src\shaders\fragment.frag">
+      <FileType>Document</FileType>
+    </CustomBuild>
     <None Include="vcpkg.json" />
+    <CustomBuild Include="src\shaders\vertex.vert">
+      <FileType>Document</FileType>
+    </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

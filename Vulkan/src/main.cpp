@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <forward_list>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -15,6 +14,9 @@
 #include <span>
 #include <stdexcept>
 #include <vector>
+
+#include "shaders/generated/vertex.h"
+#include "shaders/generated/fragment.h"
 
 namespace {
   std::uint32_t constexpr kWidth{800};
@@ -71,6 +73,54 @@ class HelloTriangleApplication {
   VkFormat swap_chain_image_format_{};
   VkExtent2D swap_chain_extent_{};
   std::vector<VkImageView> swap_chain_image_views_;
+
+  [[nodiscard]] auto CreateShaderModule(std::span<std::uint32_t const> const code) const -> VkShaderModule {
+    VkShaderModuleCreateInfo const create_info{
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .codeSize = code.size_bytes(),
+      .pCode = code.data()
+    };
+
+    VkShaderModule ret;
+
+    if (vkCreateShaderModule(device_, &create_info, nullptr, &ret) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to create shader module."};
+    }
+
+    return ret;
+  }
+
+  auto CreateGraphicsPipeline() -> void {
+    auto const vert_shader_module{CreateShaderModule(g_vertex_bin)};
+    auto const frag_shader_module{CreateShaderModule(g_fragment_bin)};
+
+    VkPipelineShaderStageCreateInfo const vert_shader_stage_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+      .module = vert_shader_module,
+      .pName = "main",
+      .pSpecializationInfo = nullptr
+    };
+
+    VkPipelineShaderStageCreateInfo const frag_shader_stage_info{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+      .module = frag_shader_module,
+      .pName = "main",
+      .pSpecializationInfo = nullptr
+    };
+
+    std::array const shader_stages{vert_shader_stage_info, frag_shader_stage_info};
+
+    vkDestroyShaderModule(device_, frag_shader_module, nullptr);
+    vkDestroyShaderModule(device_, vert_shader_module, nullptr);
+  }
 
   auto CreateImageViews() -> void {
     swap_chain_image_views_.resize(swap_chain_images_.size());
@@ -398,7 +448,8 @@ class HelloTriangleApplication {
   auto SetupDebugMessenger() -> void {
     if constexpr (!kEnableValidationLayers) {
       return;
-    } else {
+    }
+    else {
       auto const create_info{
         [] {
           VkDebugUtilsMessengerCreateInfoEXT ret;
@@ -526,6 +577,7 @@ class HelloTriangleApplication {
     CreateLogicalDevice();
     CreateSwapChain();
     CreateImageViews();
+    CreateGraphicsPipeline();
   }
 
   auto MainLoop() const -> void {
@@ -569,7 +621,8 @@ auto main() -> int {
   try {
     HelloTriangleApplication app;
     app.run();
-  } catch (std::exception const& e) {
+  }
+  catch (std::exception const& e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
