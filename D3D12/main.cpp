@@ -1,7 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <d3d12.h>
-#include <d3dx12.h>
 #include <D3D12MemAlloc.h>
 #include <dxgi1_6.h>
 #include <Windows.h>
@@ -10,6 +9,7 @@
 #include <array>
 #include <cassert>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <type_traits>
 
@@ -188,13 +188,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const rtvHeapCpuStart{rtvHeap->GetCPUDescriptorHandleForHeapStart()};
 
   std::array<ComPtr<ID3D12Resource2>, SWAP_CHAIN_BUFFER_COUNT> backBuffers;
-  std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, SWAP_CHAIN_BUFFER_COUNT> backBufferRTVs{};
+  std::array<D3D12_CPU_DESCRIPTOR_HANDLE, SWAP_CHAIN_BUFFER_COUNT> backBufferRTVs{};
 
   for (UINT i = 0; i < SWAP_CHAIN_BUFFER_COUNT; i++) {
     hr = swapChain->GetBuffer(i, IID_PPV_ARGS(backBuffers[i].GetAddressOf()));
     assert(SUCCEEDED(hr));
 
-    backBufferRTVs[i] = CD3DX12_CPU_DESCRIPTOR_HANDLE{rtvHeapCpuStart, static_cast<INT>(i), rtvHeapInc};
+    backBufferRTVs[i].ptr = rtvHeapCpuStart.ptr + i * rtvHeapInc;
 
     D3D12_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
       .Format = SWAP_CHAIN_FORMAT,
@@ -256,9 +256,26 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> rootSig;
 
   {
-    CD3DX12_ROOT_PARAMETER1 rootParam;
-    rootParam.InitAsConstants(2, 0, 0, D3D12_SHADER_VISIBILITY_ALL);
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{1, &rootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED};
+    D3D12_ROOT_PARAMETER1 constexpr rootParam{
+      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+      .Constants = {
+        .ShaderRegister = 0,
+        .RegisterSpace = 0,
+        .Num32BitValues = 2
+      },
+      .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+    };
+
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{
+      .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+      .Desc_1_1 = {
+        .NumParameters = 1,
+        .pParameters = &rootParam,
+        .NumStaticSamplers = 0,
+        .pStaticSamplers = nullptr,
+        .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+      }
+    };
 
     ComPtr<ID3DBlob> rootSigBlob;
     hr = D3D12SerializeVersionedRootSignature(&rootSigDesc, rootSigBlob.GetAddressOf(), nullptr);
@@ -272,24 +289,82 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12PipelineState> pso;
 
   {
-    struct {
-      CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE rootSig;
-      CD3DX12_PIPELINE_STATE_STREAM_VS vs;
-      CD3DX12_PIPELINE_STATE_STREAM_PS ps;
-      CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS rtvFormats;
-    } stream{
-        .rootSig = rootSig.Get(),
-        .vs = CD3DX12_SHADER_BYTECODE{gVSBin, ARRAYSIZE(gVSBin)},
-        .ps = CD3DX12_SHADER_BYTECODE{gPSBin, ARRAYSIZE(gPSBin)},
-        .rtvFormats = {D3D12_RT_FORMAT_ARRAY{.RTFormats = {SWAP_CHAIN_FORMAT}, .NumRenderTargets = 1}}
-      };
-
-    D3D12_PIPELINE_STATE_STREAM_DESC streamDesc{
-      .SizeInBytes = sizeof(stream),
-      .pPipelineStateSubobjectStream = &stream
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
+      .pRootSignature = rootSig.Get(),
+      .VS = {gVSBin, ARRAYSIZE(gVSBin)},
+      .PS = {gPSBin, ARRAYSIZE(gPSBin)},
+      .DS = {nullptr, 0},
+      .HS = {nullptr, 0},
+      .GS = {nullptr, 0},
+      .StreamOutput = {},
+      .BlendState = {
+        .AlphaToCoverageEnable = FALSE,
+        .IndependentBlendEnable = FALSE,
+        .RenderTarget = {
+          D3D12_RENDER_TARGET_BLEND_DESC{
+            .BlendEnable = FALSE,
+            .LogicOpEnable = FALSE,
+            .SrcBlend = D3D12_BLEND_ONE,
+            .DestBlend = D3D12_BLEND_ZERO,
+            .BlendOp = D3D12_BLEND_OP_ADD,
+            .SrcBlendAlpha = D3D12_BLEND_ONE,
+            .DestBlendAlpha = D3D12_BLEND_ONE,
+            .BlendOpAlpha = D3D12_BLEND_OP_ADD,
+            .LogicOp = D3D12_LOGIC_OP_NOOP,
+            .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL
+          }
+        }
+      },
+      .SampleMask = std::numeric_limits<UINT>::max(),
+      .RasterizerState = {
+        .FillMode = D3D12_FILL_MODE_SOLID,
+        .CullMode = D3D12_CULL_MODE_BACK,
+        .FrontCounterClockwise = FALSE,
+        .DepthBias = 0,
+        .DepthBiasClamp = 0,
+        .SlopeScaledDepthBias = 0,
+        .DepthClipEnable = TRUE,
+        .MultisampleEnable = FALSE,
+        .AntialiasedLineEnable = FALSE,
+        .ForcedSampleCount = 0,
+        .ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+      },
+      .DepthStencilState = {
+        .DepthEnable = FALSE,
+        .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO,
+        .DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS,
+        .StencilEnable = FALSE,
+        .StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK,
+        .StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK,
+        .FrontFace = {
+          .StencilFailOp = D3D12_STENCIL_OP_KEEP,
+          .StencilDepthFailOp = D3D12_STENCIL_OP_KEEP,
+          .StencilPassOp = D3D12_STENCIL_OP_KEEP,
+          .StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS
+        },
+        .BackFace = {
+          .StencilFailOp = D3D12_STENCIL_OP_KEEP,
+          .StencilDepthFailOp = D3D12_STENCIL_OP_KEEP,
+          .StencilPassOp = D3D12_STENCIL_OP_KEEP,
+          .StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS
+        }
+      },
+      .InputLayout = {nullptr, 0},
+      .IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED,
+      .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+      .NumRenderTargets = 1,
+      .RTVFormats = {SWAP_CHAIN_FORMAT},
+      .DSVFormat = DXGI_FORMAT_UNKNOWN,
+      .SampleDesc = {
+        .Count = 1,
+        .Quality = 0
+      },
+      .NodeMask = 0,
+      .CachedPSO = {nullptr, 0},
+      .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
     };
 
-    hr = device->CreatePipelineState(&streamDesc, IID_PPV_ARGS(pso.GetAddressOf()));
+    hr = device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(pso.GetAddressOf()));
     assert(SUCCEEDED(hr));
   }
 
@@ -304,7 +379,27 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   auto constexpr uploadBufSize{64 * 1024};
-  auto const uploadResDesc{CD3DX12_RESOURCE_DESC1::Buffer(uploadBufSize)};
+
+  D3D12_RESOURCE_DESC1 constexpr uploadResDesc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+    .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+    .Width = uploadBufSize,
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = DXGI_FORMAT_UNKNOWN,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Flags = D3D12_RESOURCE_FLAG_NONE,
+    .SamplerFeedbackMipRegion = {
+      .Width = 0,
+      .Height = 0,
+      .Depth = 0
+    }
+  };
 
   ComPtr<D3D12MA::Allocation> uploadAlloc;
   ComPtr<ID3D12Resource2> uploadBuf;
@@ -324,7 +419,26 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     std::array{-0.5f, -0.5f}
   };
 
-  auto const vertBufDesc{CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices))};
+  D3D12_RESOURCE_DESC1 constexpr vertBufDesc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+    .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+    .Width = sizeof(vertices),
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = DXGI_FORMAT_UNKNOWN,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    .Flags = D3D12_RESOURCE_FLAG_NONE,
+    .SamplerFeedbackMipRegion = {
+      .Width = 0,
+      .Height = 0,
+      .Depth = 0
+    }
+  };
 
   D3D12MA::ALLOCATION_DESC constexpr vertBufAllocDesc{
     .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
@@ -335,7 +449,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<D3D12MA::Allocation> vertBufAlloc;
-  hr = allocator->CreateResource(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
+  hr = allocator->CreateResource2(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
   // UPLOAD VERTEX DATA
@@ -347,8 +461,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   cmdLists[frameIdx]->CopyBufferRegion(vertBufAlloc->GetResource(), 0, uploadBuf.Get(), 0, sizeof(vertices));
 
-  auto const vertexPostUploadBarrier{CD3DX12_RESOURCE_BARRIER::Transition(vertBufAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)};
-
+  D3D12_RESOURCE_BARRIER const vertexPostUploadBarrier{
+    .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+    .Transition = {
+      .pResource = vertBufAlloc->GetResource(),
+      .Subresource = 0,
+      .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+      .StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+    }
+  };
   cmdLists[frameIdx]->ResourceBarrier(1, &vertexPostUploadBarrier);
 
   hr = cmdLists[frameIdx]->Close();
@@ -369,10 +491,29 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .pPrivateData = nullptr
   };
 
-  auto const texDesc{CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1)};
+  D3D12_RESOURCE_DESC1 constexpr texDesc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    .Alignment = 0,
+    .Width = 1,
+    .Height = 1,
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    .Flags = D3D12_RESOURCE_FLAG_NONE,
+    .SamplerFeedbackMipRegion = {
+      .Width = 0,
+      .Height = 0,
+      .Depth = 0
+    }
+  };
 
   ComPtr<D3D12MA::Allocation> texAlloc;
-  hr = allocator->CreateResource(&texAllocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, texAlloc.GetAddressOf(), IID_NULL, nullptr);
+  hr = allocator->CreateResource2(&texAllocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, texAlloc.GetAddressOf(), IID_NULL, nullptr);
   assert(SUCCEEDED(hr));
 
   // UPLOAD TEXTURE DATA
@@ -382,11 +523,39 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
   assert(SUCCEEDED(hr));
 
-  CD3DX12_TEXTURE_COPY_LOCATION const srcTexCopyLoc{uploadBuf.Get(), D3D12_PLACED_SUBRESOURCE_FOOTPRINT{.Offset = 0, .Footprint = CD3DX12_SUBRESOURCE_FOOTPRINT{DXGI_FORMAT_R8G8B8A8_UNORM, 1, 1, 1, sizeof(texColor)}}};
-  CD3DX12_TEXTURE_COPY_LOCATION const dstTexCopyLoc{texAlloc->GetResource(), 0};
+  D3D12_TEXTURE_COPY_LOCATION const srcTexCopyLoc{
+    .pResource = uploadBuf.Get(),
+    .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+    .PlacedFootprint = {
+      .Offset = 0,
+      .Footprint = {
+        .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+        .Width = 1,
+        .Height = 1,
+        .Depth = 1,
+        .RowPitch = sizeof(texColor)
+      }
+    }
+  };
+
+  D3D12_TEXTURE_COPY_LOCATION const dstTexCopyLoc{
+    .pResource = texAlloc->GetResource(),
+    .Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+    .SubresourceIndex = 0
+  };
+
   cmdLists[frameIdx]->CopyTextureRegion(&dstTexCopyLoc, 0, 0, 0, &srcTexCopyLoc, nullptr);
 
-  auto const texPostUploadBarrier{CD3DX12_RESOURCE_BARRIER::Transition(texAlloc->GetResource(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)};
+  D3D12_RESOURCE_BARRIER const texPostUploadBarrier{
+    .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+    .Transition = {
+      .pResource = texAlloc->GetResource(),
+      .Subresource = 0,
+      .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+      .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    }
+  };
 
   cmdLists[frameIdx]->ResourceBarrier(1, &texPostUploadBarrier);
 
@@ -424,7 +593,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto constexpr vbSrvIdx{0};
 
-  device->CreateShaderResourceView(vertBufAlloc->GetResource(), &vertBufSrvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart, vbSrvIdx, resHeapInc});
+  device->CreateShaderResourceView(vertBufAlloc->GetResource(), &vertBufSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + vbSrvIdx * resHeapInc});
 
   D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
     .Format = texDesc.Format,
@@ -437,7 +606,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto constexpr texSrvIdx{vbSrvIdx + 1};
 
-  device->CreateShaderResourceView(texAlloc->GetResource(), &texSrvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart, texSrvIdx, resHeapInc});
+  device->CreateShaderResourceView(texAlloc->GetResource(), &texSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + texSrvIdx * resHeapInc});
 
   ComPtr<ID3D12CommandAllocator> bundleAllocator;
   hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&bundleAllocator));
@@ -476,18 +645,35 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
     cmdLists[frameIdx]->SetGraphicsRoot32BitConstants(0, 2, std::array{vbSrvIdx, texSrvIdx}.data(), 0);
 
-    CD3DX12_VIEWPORT const viewport{backBuffers[backBufIdx].Get()};
+    auto const back_buf_desc{backBuffers[backBufIdx]->GetDesc1()};
+
+    D3D12_VIEWPORT const viewport{
+      .TopLeftX = 0,
+      .TopLeftY = 0,
+      .Width = static_cast<FLOAT>(back_buf_desc.Width),
+      .Height = static_cast<FLOAT>(back_buf_desc.Height),
+      .MinDepth = 0,
+      .MaxDepth = 1
+    };
     cmdLists[frameIdx]->RSSetViewports(1, &viewport);
 
-    CD3DX12_RECT const scissorRect{
-      static_cast<LONG>(viewport.TopLeftX), static_cast<LONG>(viewport.TopLeftY),
-      static_cast<LONG>(viewport.TopLeftX + viewport.Width), static_cast<LONG>(viewport.TopLeftY + viewport.Height)
+    D3D12_RECT const scissorRect{
+      .left = static_cast<LONG>(viewport.TopLeftX),
+      .top = static_cast<LONG>(viewport.TopLeftY),
+      .right = static_cast<LONG>(viewport.TopLeftX + viewport.Width),
+      .bottom = static_cast<LONG>(viewport.TopLeftY + viewport.Height)
     };
     cmdLists[frameIdx]->RSSetScissorRects(1, &scissorRect);
 
-    auto const swapChainRtvBarrier{
-      CD3DX12_RESOURCE_BARRIER::Transition(backBuffers[backBufIdx].Get(), D3D12_RESOURCE_STATE_PRESENT,
-                                           D3D12_RESOURCE_STATE_RENDER_TARGET)
+    D3D12_RESOURCE_BARRIER const swapChainRtvBarrier{
+      .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+      .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+      .Transition = {
+        .pResource = backBuffers[backBufIdx].Get(),
+        .Subresource = 0,
+        .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+        .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
+      }
     };
     cmdLists[frameIdx]->ResourceBarrier(1, &swapChainRtvBarrier);
 
@@ -497,9 +683,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     cmdLists[frameIdx]->ExecuteBundle(bundle.Get());
 
-    auto const swapChainPresentBarrier{
-      CD3DX12_RESOURCE_BARRIER::Transition(backBuffers[backBufIdx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                           D3D12_RESOURCE_STATE_PRESENT)
+    D3D12_RESOURCE_BARRIER const swapChainPresentBarrier{
+      .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+      .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+      .Transition = {
+        .pResource = backBuffers[backBufIdx].Get(),
+        .Subresource = 0,
+        .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
+        .StateAfter = D3D12_RESOURCE_STATE_PRESENT
+      }
     };
     cmdLists[frameIdx]->ResourceBarrier(1, &swapChainPresentBarrier);
 
