@@ -1,7 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <d3d12.h>
-#include <D3D12MemAlloc.h>
 #include <dxgi1_6.h>
 #include <Windows.h>
 #include <wrl/client.h>
@@ -106,25 +105,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 #endif
-
-  ComPtr<D3D12MA::Allocator> allocator;
-
-  {
-    ComPtr<IDXGIAdapter4> adapter4;
-    hr = factory->EnumAdapterByLuid(device->GetAdapterLuid(), IID_PPV_ARGS(adapter4.GetAddressOf()));
-    assert(SUCCEEDED(hr));
-
-    D3D12MA::ALLOCATOR_DESC const allocatorDesc{
-      .Flags = D3D12MA::ALLOCATOR_FLAG_NONE,
-      .pDevice = device.Get(),
-      .PreferredBlockSize = 0,
-      .pAllocationCallbacks = nullptr,
-      .pAdapter = adapter4.Get()
-    };
-
-    hr = CreateAllocator(&allocatorDesc, allocator.GetAddressOf());
-    assert(SUCCEEDED(hr));
-  }
 
   ComPtr<ID3D12CommandQueue> commandQueue;
 
@@ -370,12 +350,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   // CREATE UPLOAD BUFFER
 
-  D3D12MA::ALLOCATION_DESC constexpr uploadAllocDesc{
-    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-    .HeapType = D3D12_HEAP_TYPE_UPLOAD,
-    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-    .CustomPool = nullptr,
-    .pPrivateData = nullptr
+  D3D12_HEAP_PROPERTIES constexpr upload_heap_properties{
+    .Type = D3D12_HEAP_TYPE_UPLOAD,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 0,
+    .VisibleNodeMask = 0
   };
 
   auto constexpr uploadBufSize{64 * 1024};
@@ -401,11 +381,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  ComPtr<D3D12MA::Allocation> uploadAlloc;
   ComPtr<ID3D12Resource2> uploadBuf;
-
-  hr = allocator->CreateResource2(&uploadAllocDesc, &uploadResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, &uploadAlloc, IID_PPV_ARGS(&uploadBuf));
-  assert(SUCCEEDED(hr));
+  hr = device->CreateCommittedResource2(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &uploadResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, nullptr, IID_PPV_ARGS(&uploadBuf));
+  assert(SUCCEEDED(hr));;
 
   void* mappedUploadBuf;
   hr = uploadBuf->Map(0, nullptr, &mappedUploadBuf);
@@ -440,16 +418,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  D3D12MA::ALLOCATION_DESC constexpr vertBufAllocDesc{
-    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
-    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-    .CustomPool = nullptr,
-    .pPrivateData = nullptr
+  D3D12_HEAP_PROPERTIES constexpr vertex_buffer_heap_properties{
+    .Type = D3D12_HEAP_TYPE_DEFAULT,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 0,
+    .VisibleNodeMask = 0
   };
 
-  ComPtr<D3D12MA::Allocation> vertBufAlloc;
-  hr = allocator->CreateResource2(&vertBufAllocDesc, &vertBufDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, vertBufAlloc.GetAddressOf(), IID_NULL, nullptr);
+  ComPtr<ID3D12Resource2> vertex_buffer;
+  hr = device->CreateCommittedResource2(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertBufDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, nullptr, IID_PPV_ARGS(&vertex_buffer));
   assert(SUCCEEDED(hr));
 
   // UPLOAD VERTEX DATA
@@ -459,13 +437,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
   assert(SUCCEEDED(hr));
 
-  cmdLists[frameIdx]->CopyBufferRegion(vertBufAlloc->GetResource(), 0, uploadBuf.Get(), 0, sizeof(vertices));
+  cmdLists[frameIdx]->CopyBufferRegion(vertex_buffer.Get(), 0, uploadBuf.Get(), 0, sizeof(vertices));
 
   D3D12_RESOURCE_BARRIER const vertexPostUploadBarrier{
     .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
     .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
     .Transition = {
-      .pResource = vertBufAlloc->GetResource(),
+      .pResource = vertex_buffer.Get(),
       .Subresource = 0,
       .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
       .StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
@@ -483,12 +461,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   std::array<unsigned char, 4> constexpr texColor{255, 0, 255, 255};
 
-  D3D12MA::ALLOCATION_DESC constexpr texAllocDesc{
-    .Flags = D3D12MA::ALLOCATION_FLAG_NONE,
-    .HeapType = D3D12_HEAP_TYPE_DEFAULT,
-    .ExtraHeapFlags = D3D12_HEAP_FLAG_NONE,
-    .CustomPool = nullptr,
-    .pPrivateData = nullptr
+  D3D12_HEAP_PROPERTIES constexpr tex_heap_properties{
+    .Type = D3D12_HEAP_TYPE_DEFAULT,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 0,
+    .VisibleNodeMask = 0
   };
 
   D3D12_RESOURCE_DESC1 constexpr texDesc{
@@ -512,8 +490,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  ComPtr<D3D12MA::Allocation> texAlloc;
-  hr = allocator->CreateResource2(&texAllocDesc, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, texAlloc.GetAddressOf(), IID_NULL, nullptr);
+  ComPtr<ID3D12Resource2> texture;
+  hr = device->CreateCommittedResource2(&tex_heap_properties, D3D12_HEAP_FLAG_NONE, &texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, nullptr, IID_PPV_ARGS(&texture));
   assert(SUCCEEDED(hr));
 
   // UPLOAD TEXTURE DATA
@@ -539,7 +517,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   D3D12_TEXTURE_COPY_LOCATION const dstTexCopyLoc{
-    .pResource = texAlloc->GetResource(),
+    .pResource = texture.Get(),
     .Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
     .SubresourceIndex = 0
   };
@@ -550,7 +528,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
     .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
     .Transition = {
-      .pResource = texAlloc->GetResource(),
+      .pResource = texture.Get(),
       .Subresource = 0,
       .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
       .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
@@ -593,7 +571,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto constexpr vbSrvIdx{0};
 
-  device->CreateShaderResourceView(vertBufAlloc->GetResource(), &vertBufSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + vbSrvIdx * resHeapInc});
+  device->CreateShaderResourceView(vertex_buffer.Get(), &vertBufSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + vbSrvIdx * resHeapInc});
 
   D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
     .Format = texDesc.Format,
@@ -606,7 +584,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   auto constexpr texSrvIdx{vbSrvIdx + 1};
 
-  device->CreateShaderResourceView(texAlloc->GetResource(), &texSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + texSrvIdx * resHeapInc});
+  device->CreateShaderResourceView(texture.Get(), &texSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + texSrvIdx * resHeapInc});
 
   ComPtr<ID3D12CommandAllocator> bundleAllocator;
   hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&bundleAllocator));

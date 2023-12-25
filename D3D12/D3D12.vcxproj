@@ -90,7 +90,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="vendor\D3D12MemoryAllocator\D3D12MemAlloc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\PixelShader.hlsl">
@@ -130,7 +129,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="shaders\interop.h" />
-    <ClInclude Include="vendor\D3D12MemoryAllocator\D3D12MemAlloc.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
