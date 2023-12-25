@@ -24,7 +24,6 @@
     <FxCompile Include="shaders\PixelShader.hlsl" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
     <None Include="shaders\constant-buffer.hlsli" />
   </ItemGroup>
   <ItemGroup>
