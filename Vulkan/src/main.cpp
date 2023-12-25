@@ -70,11 +70,49 @@ public:
   }
 
 private:
+  auto CleanupSwapChain() const -> void {
+    for (auto const framebuffer : swap_chain_framebuffers_) {
+      vkDestroyFramebuffer(device_, framebuffer, nullptr);
+    }
+
+    for (auto const image_view : swap_chain_image_views_) {
+      vkDestroyImageView(device_, image_view, nullptr);
+    }
+
+    vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+  }
+
+  auto RecreateSwapChain() -> void {
+    int width{0};
+    int height{0};
+    glfwGetFramebufferSize(window_, &width, &height);
+
+    while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(window_, &width, &height);
+      glfwWaitEvents();
+    }
+
+    if (vkDeviceWaitIdle(device_) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to wait for device idle."};
+    }
+
+    CleanupSwapChain();
+    CreateSwapChain();
+    CreateImageViews();
+    CreateFramebuffers();
+  }
+
+  static auto FramebufferSizeCallback(GLFWwindow* const window, [[maybe_unused]] int const width, [[maybe_unused]] int const height) -> void {
+    auto const app{std::bit_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window))};
+    app->framebuffer_resized_ = true;
+  }
+
   auto InitWindow() -> void {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     window_ = glfwCreateWindow(kWidth, kHeight, "Vulkan Test", nullptr, nullptr);
+    glfwSetWindowUserPointer(window_, this);
+    glfwSetFramebufferSizeCallback(window_, &FramebufferSizeCallback);
   }
 
   [[nodiscard]] static auto CheckValidationLayerSupport() -> bool {
@@ -190,8 +228,7 @@ private:
   auto SetupDebugMessenger() -> void {
     if constexpr (!kEnableValidationLayers) {
       return;
-    }
-    else {
+    } else {
       auto const create_info{
         [] {
           VkDebugUtilsMessengerCreateInfoEXT ret;
@@ -922,13 +959,16 @@ private:
       throw std::runtime_error{"Failed to wait for fence."};
     }
 
-    if (vkResetFences(device_, 1, &in_flight_fences_[current_frame_]) != VK_SUCCESS) {
-      throw std::runtime_error{"Failed to reset fence."};
+    std::uint32_t img_idx;
+    if (auto const result{vkAcquireNextImageKHR(device_, swap_chain_, std::numeric_limits<std::uint64_t>::max(), image_available_semaphores_[current_frame_], VK_NULL_HANDLE, &img_idx)}; result == VK_ERROR_OUT_OF_DATE_KHR) {
+      RecreateSwapChain();
+      return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      throw std::runtime_error{"Failed to acquire next swapchain image."};
     }
 
-    std::uint32_t img_idx;
-    if (vkAcquireNextImageKHR(device_, swap_chain_, std::numeric_limits<std::uint64_t>::max(), image_available_semaphores_[current_frame_], VK_NULL_HANDLE, &img_idx) != VK_SUCCESS) {
-      throw std::runtime_error{"Failed to acquire next swapchain image."};
+    if (vkResetFences(device_, 1, &in_flight_fences_[current_frame_]) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to reset fence."};
     }
 
     if (vkResetCommandBuffer(command_buffers_[current_frame_], 0) != VK_SUCCESS) {
@@ -968,7 +1008,10 @@ private:
       .pResults = nullptr
     };
 
-    if (vkQueuePresentKHR(present_queue_, &present_info) != VK_SUCCESS) {
+    if (auto const result{vkQueuePresentKHR(present_queue_, &present_info)}; result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized_) {
+      framebuffer_resized_ = false;
+      RecreateSwapChain();
+    } else if (result != VK_SUCCESS) {
       throw std::runtime_error{"Failed to present."};
     }
 
@@ -995,9 +1038,6 @@ private:
 
     vkDestroyCommandPool(device_, command_pool_, nullptr);
 
-    for (auto const framebuffer : swap_chain_framebuffers_) {
-      vkDestroyFramebuffer(device_, framebuffer, nullptr);
-    }
 
     vkDestroyPipeline(device_, pipeline_, nullptr);
 
@@ -1005,11 +1045,7 @@ private:
 
     vkDestroyRenderPass(device_, render_pass_, nullptr);
 
-    for (auto const image_view : swap_chain_image_views_) {
-      vkDestroyImageView(device_, image_view, nullptr);
-    }
-
-    vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+    CleanupSwapChain();
 
     vkDestroyDevice(device_, nullptr);
 
@@ -1048,14 +1084,14 @@ private:
   std::vector<VkSemaphore> render_finished_semaphores_;
   std::vector<VkFence> in_flight_fences_;
   std::uint32_t current_frame_{0};
+  bool framebuffer_resized_{false};
 };
 
 auto main() -> int {
   try {
     HelloTriangleApplication app;
     app.run();
-  }
-  catch (std::exception const& e) {
+  } catch (std::exception const& e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
