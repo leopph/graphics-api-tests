@@ -88,6 +88,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(factory.GetAddressOf()));
   assert(SUCCEEDED(hr));
 
+  BOOL tearing_supported{FALSE};
+  hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing_supported, sizeof tearing_supported);
+  assert(SUCCEEDED(hr));
+
   ComPtr<ID3D12Device9> device;
   hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(device.GetAddressOf()));
   assert(SUCCEEDED(hr));
@@ -124,8 +128,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
   ComPtr<IDXGISwapChain4> swapChain;
 
+  UINT const swapChainFlags{tearing_supported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0u};
+  UINT const presentFlags{tearing_supported ? DXGI_PRESENT_ALLOW_TEARING : 0};
+
   {
-    DXGI_SWAP_CHAIN_DESC1 constexpr swapChainDesc{
+    DXGI_SWAP_CHAIN_DESC1 const swapChainDesc{
       .Width = 0,
       .Height = 0,
       .Format = SWAP_CHAIN_FORMAT,
@@ -136,7 +143,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .Scaling = DXGI_SCALING_NONE,
       .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
       .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-      .Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
+      .Flags = swapChainFlags
     };
 
     ComPtr<IDXGISwapChain1> tmpSwapChain;
@@ -678,7 +685,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
 
-    hr = swapChain->Present(0, DXGI_PRESENT_ALLOW_TEARING);
+    hr = swapChain->Present(0, presentFlags);
     assert(SUCCEEDED(hr));
 
     waitForInFlightFrames();
