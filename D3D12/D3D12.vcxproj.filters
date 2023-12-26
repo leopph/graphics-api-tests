@@ -20,8 +20,8 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="shaders\VertexShader.hlsl" />
-    <FxCompile Include="shaders\PixelShader.hlsl" />
+    <FxCompile Include="shaders\DynResVS.hlsl" />
+    <FxCompile Include="shaders\DynResPS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\constant-buffer.hlsli" />

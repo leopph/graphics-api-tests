@@ -39,8 +39,8 @@
 #endif
 #define MAKE_SHADER_INCLUDE_PATH(x) MAKE_SHADER_INCLUDE_PATH1(x)
 
-#include MAKE_SHADER_INCLUDE_PATH(PixelShader)
-#include MAKE_SHADER_INCLUDE_PATH(VertexShader)
+#include MAKE_SHADER_INCLUDE_PATH(DynResPS)
+#include MAKE_SHADER_INCLUDE_PATH(DynResVS)
 
 #include "shaders/interop.h"
 
@@ -309,7 +309,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
                                      IID_PPV_ARGS(rootSig.GetAddressOf()));
-
     assert(SUCCEEDED(hr));
   }
 
@@ -318,8 +317,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
       .pRootSignature = rootSig.Get(),
-      .VS = {kVertexShaderBin, ARRAYSIZE(kVertexShaderBin)},
-      .PS = {kPixelShaderBin, ARRAYSIZE(kPixelShaderBin)},
+      .VS = {kDynResVSBin, ARRAYSIZE(kDynResVSBin)},
+      .PS = {kDynResPSBin, ARRAYSIZE(kDynResPSBin)},
       .DS = {nullptr, 0},
       .HS = {nullptr, 0},
       .GS = {nullptr, 0},
