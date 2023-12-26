@@ -268,10 +268,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-  ComPtr<ID3D12RootSignature> rootSig;
+  ComPtr<ID3D12RootSignature> root_signature;
 
   {
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_signature_desc;
+    ComPtr<ID3DBlob> root_signature_blob;
 
 #ifndef NO_DYNAMIC_RESOURCES
     if (dynamic_resources_supported) {
@@ -285,12 +285,19 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
       };
 
-      root_signature_desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
-      root_signature_desc.Desc_1_1.NumParameters = 1;
-      root_signature_desc.Desc_1_1.pParameters = &root_parameter;
-      root_signature_desc.Desc_1_1.NumStaticSamplers = 0;
-      root_signature_desc.Desc_1_1.pStaticSamplers = nullptr;
-      root_signature_desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
+      D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
+        .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+        .Desc_1_1 = {
+          .NumParameters = 1,
+          .pParameters = &root_parameter,
+          .NumStaticSamplers = 0,
+          .pStaticSamplers = nullptr,
+          .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+        }
+      };
+
+      hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
+      assert(SUCCEEDED(hr));
     } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
@@ -303,12 +310,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #endif
 
 
-    ComPtr<ID3DBlob> rootSigBlob;
-    hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, rootSigBlob.GetAddressOf(), nullptr);
-    assert(SUCCEEDED(hr));
-
-    hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
-                                     IID_PPV_ARGS(rootSig.GetAddressOf()));
+    hr = device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature));
     assert(SUCCEEDED(hr));
   }
 
@@ -316,7 +318,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
-      .pRootSignature = rootSig.Get(),
+      .pRootSignature = root_signature.Get(),
       .VS = {kDynResVSBin, ARRAYSIZE(kDynResVSBin)},
       .PS = {kDynResPSBin, ARRAYSIZE(kDynResPSBin)},
       .DS = {nullptr, 0},
@@ -666,7 +668,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
 
     cmdLists[frameIdx]->SetDescriptorHeaps(1, resHeap.GetAddressOf());
-    cmdLists[frameIdx]->SetGraphicsRootSignature(rootSig.Get());
+    cmdLists[frameIdx]->SetGraphicsRootSignature(root_signature.Get());
     cmdLists[frameIdx]->SetGraphicsRoot32BitConstants(0, 2, std::array{vbSrvIdx, texSrvIdx}.data(), 0);
 
     auto const back_buf_desc{backBuffers[backBufIdx]->GetDesc1()};
