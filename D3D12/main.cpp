@@ -42,8 +42,6 @@
 #include MAKE_SHADER_INCLUDE_PATH(DynResPS)
 #include MAKE_SHADER_INCLUDE_PATH(DynResVS)
 
-#include "shaders/interop.h"
-
 
 namespace {
   auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
@@ -301,7 +299,36 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
+      std::array constexpr root_parameters{
+        D3D12_ROOT_PARAMETER1{
+          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+          .Constants = {
+            .ShaderRegister = 0,
+            .RegisterSpace = 0,
+            .Num32BitValues = 2
+          },
+          .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+        },
+        D3D12_ROOT_PARAMETER1{
+          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+          .DescriptorTable = {},
+          .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+        }
+      };
 
+      D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
+        .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+        .Desc_1_1 = {
+          .NumParameters = static_cast<UINT>(root_parameters.size()),
+          .pParameters = root_parameters.data(),
+          .NumStaticSamplers = 0,
+          .pStaticSamplers = nullptr,
+          .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+        }
+      };
+
+      hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
+      assert(SUCCEEDED(hr));
 #else
 
 #endif
@@ -606,13 +633,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const resHeapCpuStart{resHeap->GetCPUDescriptorHandleForHeapStart()};
 
   D3D12_SHADER_RESOURCE_VIEW_DESC constexpr vertBufSrvDesc{
-    .Format = DXGI_FORMAT_UNKNOWN,
+    .Format = DXGI_FORMAT_R32G32_FLOAT,
     .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
     .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
     .Buffer = {
       .FirstElement = 0,
       .NumElements = static_cast<UINT>(std::size(vertices)),
-      .StructureByteStride = sizeof(decltype(vertices)::value_type),
+      .StructureByteStride = 0,
       .Flags = D3D12_BUFFER_SRV_FLAG_NONE
     }
   };

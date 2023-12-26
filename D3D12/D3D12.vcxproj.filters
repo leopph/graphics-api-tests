@@ -22,13 +22,10 @@
   <ItemGroup>
     <FxCompile Include="shaders\DynResVS.hlsl" />
     <FxCompile Include="shaders\DynResPS.hlsl" />
+    <FxCompile Include="shaders\DynIdxVS.hlsl" />
+    <FxCompile Include="shaders\DynIdxPS.hlsl" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\constant-buffer.hlsli" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="shaders\interop.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
+    <None Include="shaders\constant_buffer.hlsli" />
   </ItemGroup>
 </Project>

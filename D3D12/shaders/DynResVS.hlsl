@@ -1,6 +1,6 @@
-#include "constant-buffer.hlsli"
+#include "constant_buffer.hlsli"
 
-float4 main(const uint vertexId : SV_VertexID) : SV_Position {
-  StructuredBuffer<float2> positions = ResourceDescriptorHeap[gDescIndices.vbIdx];
-  return float4(positions[vertexId], 0, 1);
+float4 main(const uint vertex_id : SV_VertexID) : SV_Position {
+  Buffer<float2> positions = ResourceDescriptorHeap[g_desc_indices.vertex_buffer_idx];
+  return float4(positions[vertex_id], 0, 1);
 }
