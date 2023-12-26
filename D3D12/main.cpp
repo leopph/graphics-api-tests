@@ -11,8 +11,8 @@
 // Uncomment this if you want to opt out of using SM 6.6 dynamic resources
 // #define NO_DYNAMIC_RESOURCES
 
-// Uncomment this if you want to opt out of using HLSL 5.1 dynamic resource indexing
-// #define NO_DYNAMIC_RESOURCE_INDEXING
+// Uncomment this if you want to opt out of using HLSL 5.1 dynamic indexing
+// #define NO_DYNAMIC_INDEXING
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -39,8 +39,15 @@
 #endif
 #define MAKE_SHADER_INCLUDE_PATH(x) MAKE_SHADER_INCLUDE_PATH1(x)
 
+#ifndef NO_DYNAMIC_RESOURCES
 #include MAKE_SHADER_INCLUDE_PATH(DynResPS)
 #include MAKE_SHADER_INCLUDE_PATH(DynResVS)
+#endif
+
+#ifndef NO_DYNAMIC_INDEXING
+#include MAKE_SHADER_INCLUDE_PATH(DynIdxPS)
+#include MAKE_SHADER_INCLUDE_PATH(DynIdxVS)
+#endif
 
 
 namespace {
@@ -134,6 +141,20 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   auto const dynamic_resources_supported{options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >= D3D_SHADER_MODEL_6_6};
+#endif
+
+#ifndef NO_DYNAMIC_RESOURCES
+  if (dynamic_resources_supported) {
+    OutputDebugStringW(L"Using dynamic resources.\n");
+  } else {
+#endif
+#ifndef NO_DYNAMIC_INDEXING
+    OutputDebugStringW(L"Using dynamic indexing.\n");
+#else
+    OutputDebugStringW(L"Using bindful resources.\n");
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
+  }
 #endif
 
   ComPtr<ID3D12CommandQueue> commandQueue;
@@ -299,7 +320,28 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
-      std::array constexpr root_parameters{
+
+      D3D12_DESCRIPTOR_RANGE1 constexpr vertex_buffer_descriptor_range{
+        .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        .NumDescriptors = 1,
+        .BaseShaderRegister = 0,
+        .RegisterSpace = 0,
+        .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+      };
+
+      D3D12_DESCRIPTOR_RANGE1 constexpr texture_descriptor_range{
+        .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        .NumDescriptors = 1,
+        .BaseShaderRegister = 0,
+        .RegisterSpace = 1,
+        .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+      };
+
+      // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
+
+      std::array const root_parameters{
         D3D12_ROOT_PARAMETER1{
           .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
           .Constants = {
@@ -311,8 +353,19 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
         },
         D3D12_ROOT_PARAMETER1{
           .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-          .DescriptorTable = {},
-          .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+          .DescriptorTable = {
+            .NumDescriptorRanges = 1,
+            .pDescriptorRanges = &vertex_buffer_descriptor_range
+          },
+          .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
+        },
+        D3D12_ROOT_PARAMETER1{
+          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+          .DescriptorTable = {
+            .NumDescriptorRanges = 1,
+            .pDescriptorRanges = &texture_descriptor_range
+          },
+          .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
         }
       };
 
@@ -323,7 +376,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
           .pParameters = root_parameters.data(),
           .NumStaticSamplers = 0,
           .pStaticSamplers = nullptr,
-          .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+          .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
         }
       };
 
@@ -344,10 +397,32 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12PipelineState> pso;
 
   {
+    D3D12_SHADER_BYTECODE vs_bytecode;
+    D3D12_SHADER_BYTECODE ps_bytecode;
+
+#ifndef NO_DYNAMIC_RESOURCES
+    if (dynamic_resources_supported) {
+      ps_bytecode.BytecodeLength = ARRAYSIZE(kDynResPSBin);
+      ps_bytecode.pShaderBytecode = kDynResPSBin;
+      vs_bytecode.BytecodeLength = ARRAYSIZE(kDynResVSBin);
+      vs_bytecode.pShaderBytecode = kDynResVSBin;
+    } else {
+#endif
+#ifndef NO_DYNAMIC_INDEXING
+      ps_bytecode.BytecodeLength = ARRAYSIZE(kDynIdxPSBin);
+      ps_bytecode.pShaderBytecode = kDynIdxPSBin;
+      vs_bytecode.BytecodeLength = ARRAYSIZE(kDynIdxVSBin);
+      vs_bytecode.pShaderBytecode = kDynIdxVSBin;
+#else
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
+    }
+#endif
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
       .pRootSignature = root_signature.Get(),
-      .VS = {kDynResVSBin, ARRAYSIZE(kDynResVSBin)},
-      .PS = {kDynResPSBin, ARRAYSIZE(kDynResPSBin)},
+      .VS = vs_bytecode,
+      .PS = ps_bytecode,
       .DS = {nullptr, 0},
       .HS = {nullptr, 0},
       .GS = {nullptr, 0},
@@ -458,7 +533,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   ComPtr<ID3D12Resource2> uploadBuf;
   hr = device->CreateCommittedResource2(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &uploadResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, nullptr, IID_PPV_ARGS(&uploadBuf));
-  assert(SUCCEEDED(hr));;
+  assert(SUCCEEDED(hr));
 
   void* mappedUploadBuf;
   hr = uploadBuf->Map(0, nullptr, &mappedUploadBuf);
@@ -644,9 +719,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  auto constexpr vbSrvIdx{0};
+  auto constexpr vertex_buffer_srv_heap_idx{0};
 
-  device->CreateShaderResourceView(vertex_buffer.Get(), &vertBufSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + vbSrvIdx * resHeapInc});
+  device->CreateShaderResourceView(vertex_buffer.Get(), &vertBufSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + vertex_buffer_srv_heap_idx * resHeapInc});
 
   D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
     .Format = texDesc.Format,
@@ -657,9 +732,24 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  auto constexpr texSrvIdx{vbSrvIdx + 1};
+  auto constexpr tex_srv_heap_idx{vertex_buffer_srv_heap_idx + 1};
 
-  device->CreateShaderResourceView(texture.Get(), &texSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + texSrvIdx * resHeapInc});
+  device->CreateShaderResourceView(texture.Get(), &texSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + tex_srv_heap_idx * resHeapInc});
+
+  UINT constexpr vertex_buffer_shader_idx{0};
+  UINT tex_shader_idx;
+
+#ifndef NO_DYNAMIC_RESOURCES
+  if (dynamic_resources_supported) {
+    tex_shader_idx = vertex_buffer_shader_idx + 1;
+  } else {
+#else
+  tex_shader_idx = 0;
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
+  }
+#endif
+
 
   ComPtr<ID3D12CommandAllocator> bundleAllocator;
   hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&bundleAllocator));
@@ -668,6 +758,21 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12GraphicsCommandList6> bundle;
   hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundleAllocator.Get(), pso.Get(), IID_PPV_ARGS(&bundle));
   assert(SUCCEEDED(hr));
+
+  bundle->SetDescriptorHeaps(1, resHeap.GetAddressOf());
+  bundle->SetGraphicsRootSignature(root_signature.Get());
+  bundle->SetGraphicsRoot32BitConstants(0, 2, std::array{vertex_buffer_shader_idx, tex_shader_idx}.data(), 0);
+
+#ifndef NO_DYNAMIC_RESOURCES
+  if (!dynamic_resources_supported) {
+#endif
+#ifndef NO_DYNAMIC_INDEXING
+    bundle->SetGraphicsRootDescriptorTable(1, resHeap->GetGPUDescriptorHandleForHeapStart());
+    bundle->SetGraphicsRootDescriptorTable(2, {resHeap->GetGPUDescriptorHandleForHeapStart().ptr + tex_srv_heap_idx * resHeapInc});
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
+  }
+#endif
 
   bundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   bundle->DrawInstanced(3, 1, 0, 0);
@@ -695,8 +800,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
 
     cmdLists[frameIdx]->SetDescriptorHeaps(1, resHeap.GetAddressOf());
-    cmdLists[frameIdx]->SetGraphicsRootSignature(root_signature.Get());
-    cmdLists[frameIdx]->SetGraphicsRoot32BitConstants(0, 2, std::array{vbSrvIdx, texSrvIdx}.data(), 0);
 
     auto const back_buf_desc{backBuffers[backBufIdx]->GetDesc1()};
 
