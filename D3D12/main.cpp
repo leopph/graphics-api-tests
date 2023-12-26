@@ -12,13 +12,19 @@
 #include <memory>
 #include <type_traits>
 
+#define MAKE_SHADER_INCLUDE_PATH5(x) #x
+#define MAKE_SHADER_INCLUDE_PATH4(x) MAKE_SHADER_INCLUDE_PATH5(x)
+#define MAKE_SHADER_INCLUDE_PATH3(x, y, z) MAKE_SHADER_INCLUDE_PATH4(x ## y ## z)
+#define MAKE_SHADER_INCLUDE_PATH2(x, y, z) MAKE_SHADER_INCLUDE_PATH3(x, y, z)
 #ifndef NDEBUG
-#include "shaders/generated/PSBinDebug.h"
-#include "shaders/generated/VSBinDebug.h"
+#define MAKE_SHADER_INCLUDE_PATH1(x) MAKE_SHADER_INCLUDE_PATH2(shaders/generated/Debug/, x, .h)
 #else
-#include "shaders/generated/VSBin.h"
-#include "shaders/generated/PSBin.h"
+#define MAKE_SHADER_INCLUDE_PATH1(x) MAKE_SHADER_INCLUDE_PATH2(shaders/generated/Release/, x, .h)
 #endif
+#define MAKE_SHADER_INCLUDE_PATH(x) MAKE_SHADER_INCLUDE_PATH1(x)
+
+#include MAKE_SHADER_INCLUDE_PATH(PixelShader)
+#include MAKE_SHADER_INCLUDE_PATH(VertexShader)
 
 #include "shaders/interop.h"
 
@@ -265,8 +271,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
       .pRootSignature = rootSig.Get(),
-      .VS = {gVSBin, ARRAYSIZE(gVSBin)},
-      .PS = {gPSBin, ARRAYSIZE(gPSBin)},
+      .VS = {kVertexShaderBin, ARRAYSIZE(kVertexShaderBin)},
+      .PS = {kPixelShaderBin, ARRAYSIZE(kPixelShaderBin)},
       .DS = {nullptr, 0},
       .HS = {nullptr, 0},
       .GS = {nullptr, 0},
