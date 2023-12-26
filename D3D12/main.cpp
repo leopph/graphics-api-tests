@@ -1,3 +1,19 @@
+/* D3D12 test project demonstrating
+ * - vertex pulling
+ * - classic bindful resources
+ * - HLSL 5.1 dynamic resource indexing
+ * - SM 6.6 dynamic resources
+ * Define NO_DYNAMIC_RESOURCES to prevent the use of SM 6.6 dynamic resources even on supported hardware.
+ * Define NO_DYNAMIC_INDEXING to prevent the use of HLSL 5.1 dynamic resource indexing.
+ * Define both NO_DYNAMIC_RESOURCES and NO_DYNAMIC_INDEXING to force the use of the classic bindful approach.
+ */
+
+// Uncomment this if you want to opt out of using SM 6.6 dynamic resources
+// #define NO_DYNAMIC_RESOURCES
+
+// Uncomment this if you want to opt out of using HLSL 5.1 dynamic resource indexing
+// #define NO_DYNAMIC_RESOURCE_INDEXING
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <d3d12.h>
@@ -108,6 +124,18 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
     assert(SUCCEEDED(hr));
   }
+#endif
+
+#ifndef NO_DYNAMIC_RESOURCES
+  D3D12_FEATURE_DATA_D3D12_OPTIONS options;
+  hr = device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof options);
+  assert(SUCCEEDED(hr));
+
+  D3D12_FEATURE_DATA_SHADER_MODEL shader_model{D3D_SHADER_MODEL_6_6};
+  hr = device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shader_model, sizeof shader_model);
+  assert(SUCCEEDED(hr));
+
+  auto const dynamic_resources_supported{options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >= D3D_SHADER_MODEL_6_6};
 #endif
 
   ComPtr<ID3D12CommandQueue> commandQueue;
@@ -243,33 +271,45 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> rootSig;
 
   {
-    D3D12_ROOT_PARAMETER1 constexpr rootParam{
-      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
-      .Constants = {
-        .ShaderRegister = 0,
-        .RegisterSpace = 0,
-        .Num32BitValues = 2
-      },
-      .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
-    };
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_signature_desc;
 
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC const rootSigDesc{
-      .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
-      .Desc_1_1 = {
-        .NumParameters = 1,
-        .pParameters = &rootParam,
-        .NumStaticSamplers = 0,
-        .pStaticSamplers = nullptr,
-        .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
-      }
-    };
+#ifndef NO_DYNAMIC_RESOURCES
+    if (dynamic_resources_supported) {
+      D3D12_ROOT_PARAMETER1 constexpr root_parameter{
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+        .Constants = {
+          .ShaderRegister = 0,
+          .RegisterSpace = 0,
+          .Num32BitValues = 2
+        },
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+      };
+
+      root_signature_desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+      root_signature_desc.Desc_1_1.NumParameters = 1;
+      root_signature_desc.Desc_1_1.pParameters = &root_parameter;
+      root_signature_desc.Desc_1_1.NumStaticSamplers = 0;
+      root_signature_desc.Desc_1_1.pStaticSamplers = nullptr;
+      root_signature_desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
+    } else {
+#endif
+#ifndef NO_DYNAMIC_INDEXING
+
+#else
+
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
+    }
+#endif
+
 
     ComPtr<ID3DBlob> rootSigBlob;
-    hr = D3D12SerializeVersionedRootSignature(&rootSigDesc, rootSigBlob.GetAddressOf(), nullptr);
+    hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, rootSigBlob.GetAddressOf(), nullptr);
     assert(SUCCEEDED(hr));
 
     hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(),
                                      IID_PPV_ARGS(rootSig.GetAddressOf()));
+
     assert(SUCCEEDED(hr));
   }
 
