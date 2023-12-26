@@ -211,7 +211,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  auto const waitForGpuCompletion{
+  auto const waitForGpuIdle{
     [&] {
       auto const signalValue{++thisFrameFenceValue};
       auto const waitValue{signalValue};
@@ -462,7 +462,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
-  waitForGpuCompletion();
+  waitForGpuIdle();
 
   // CREATE TEXTURE
 
@@ -548,7 +548,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   commandQueue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{cmdLists[frameIdx].Get()}.data());
-  waitForGpuCompletion();
+  waitForGpuIdle();
 
   D3D12_DESCRIPTOR_HEAP_DESC constexpr resHeapDesc{
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
@@ -612,7 +612,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
       if (msg.message == WM_QUIT) {
-        waitForGpuCompletion();
+        waitForGpuIdle();
         return static_cast<int>(msg.wParam);
       }
 
