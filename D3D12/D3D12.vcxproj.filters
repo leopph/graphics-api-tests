@@ -24,6 +24,8 @@
     <FxCompile Include="shaders\DynResPS.hlsl" />
     <FxCompile Include="shaders\DynIdxVS.hlsl" />
     <FxCompile Include="shaders\DynIdxPS.hlsl" />
+    <FxCompile Include="shaders\BindfulPS.hlsl" />
+    <FxCompile Include="shaders\BindfulVS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\constant_buffer.hlsli" />

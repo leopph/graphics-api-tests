@@ -47,6 +47,9 @@
 #ifndef NO_DYNAMIC_INDEXING
 #include MAKE_SHADER_INCLUDE_PATH(DynIdxPS)
 #include MAKE_SHADER_INCLUDE_PATH(DynIdxVS)
+#else
+#include MAKE_SHADER_INCLUDE_PATH(BindfulPS)
+#include MAKE_SHADER_INCLUDE_PATH(BindfulVS)
 #endif
 
 
@@ -151,7 +154,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NO_DYNAMIC_INDEXING
     OutputDebugStringW(L"Using dynamic indexing.\n");
 #else
-    OutputDebugStringW(L"Using bindful resources.\n");
+  OutputDebugStringW(L"Using bindful resources.\n");
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
   }
@@ -320,7 +323,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
-
       D3D12_DESCRIPTOR_RANGE1 constexpr vertex_buffer_descriptor_range{
         .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
         .NumDescriptors = 1,
@@ -383,12 +385,62 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
       assert(SUCCEEDED(hr));
 #else
+    D3D12_DESCRIPTOR_RANGE1 constexpr vertex_buffer_descriptor_range{
+      .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+      .NumDescriptors = 1,
+      .BaseShaderRegister = 0,
+      .RegisterSpace = 0,
+      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+      .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+    };
 
+    D3D12_DESCRIPTOR_RANGE1 constexpr texture_descriptor_range{
+      .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+      .NumDescriptors = 1,
+      .BaseShaderRegister = 1,
+      .RegisterSpace = 0,
+      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+      .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+    };
+
+    // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
+
+    std::array const root_parameters{
+      D3D12_ROOT_PARAMETER1{
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+        .DescriptorTable = {
+          .NumDescriptorRanges = 1,
+          .pDescriptorRanges = &vertex_buffer_descriptor_range
+        },
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
+      },
+      D3D12_ROOT_PARAMETER1{
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+        .DescriptorTable = {
+          .NumDescriptorRanges = 1,
+          .pDescriptorRanges = &texture_descriptor_range
+        },
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+      }
+    };
+
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
+      .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+      .Desc_1_1 = {
+        .NumParameters = static_cast<UINT>(root_parameters.size()),
+        .pParameters = root_parameters.data(),
+        .NumStaticSamplers = 0,
+        .pStaticSamplers = nullptr,
+        .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+      }
+    };
+
+    hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
+    assert(SUCCEEDED(hr));
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
     }
 #endif
-
 
     hr = device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature));
     assert(SUCCEEDED(hr));
@@ -414,6 +466,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       vs_bytecode.BytecodeLength = ARRAYSIZE(kDynIdxVSBin);
       vs_bytecode.pShaderBytecode = kDynIdxVSBin;
 #else
+      ps_bytecode.BytecodeLength = ARRAYSIZE(kBindfulPSBin);
+      ps_bytecode.pShaderBytecode = kBindfulPSBin;
+      vs_bytecode.BytecodeLength = ARRAYSIZE(kBindfulVSBin);
+      vs_bytecode.pShaderBytecode = kBindfulVSBin;
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
     }
@@ -760,14 +816,21 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   bundle->SetDescriptorHeaps(1, resHeap.GetAddressOf());
   bundle->SetGraphicsRootSignature(root_signature.Get());
-  bundle->SetGraphicsRoot32BitConstants(0, 2, std::array{vertex_buffer_shader_idx, tex_shader_idx}.data(), 0);
+
+  std::array const root_constants{vertex_buffer_shader_idx, tex_shader_idx};
 
 #ifndef NO_DYNAMIC_RESOURCES
-  if (!dynamic_resources_supported) {
+  if (dynamic_resources_supported) {
+    bundle->SetGraphicsRoot32BitConstants(0, static_cast<UINT>(root_constants.size()), root_constants.data(), 0);
+  } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
+    bundle->SetGraphicsRoot32BitConstants(0, static_cast<UINT>(root_constants.size()), root_constants.data(), 0);
     bundle->SetGraphicsRootDescriptorTable(1, resHeap->GetGPUDescriptorHandleForHeapStart());
     bundle->SetGraphicsRootDescriptorTable(2, {resHeap->GetGPUDescriptorHandleForHeapStart().ptr + tex_srv_heap_idx * resHeapInc});
+#else
+    bundle->SetGraphicsRootDescriptorTable(0, resHeap->GetGPUDescriptorHandleForHeapStart());
+    bundle->SetGraphicsRootDescriptorTable(1, {resHeap->GetGPUDescriptorHandleForHeapStart().ptr + tex_srv_heap_idx * resHeapInc});
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
   }
