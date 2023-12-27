@@ -743,9 +743,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   if (dynamic_resources_supported) {
     tex_shader_idx = vertex_buffer_shader_idx + 1;
   } else {
-#else
-  tex_shader_idx = 0;
 #endif
+  tex_shader_idx = 0;
 #ifndef NO_DYNAMIC_RESOURCES
   }
 #endif
