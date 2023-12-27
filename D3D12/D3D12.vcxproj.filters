@@ -15,19 +15,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="shaders\DynResVS.hlsl" />
-    <FxCompile Include="shaders\DynResPS.hlsl" />
-    <FxCompile Include="shaders\DynIdxVS.hlsl" />
-    <FxCompile Include="shaders\DynIdxPS.hlsl" />
-    <FxCompile Include="shaders\BindfulPS.hlsl" />
-    <FxCompile Include="shaders\BindfulVS.hlsl" />
+    <FxCompile Include="src\shaders\DynResVS.hlsl" />
+    <FxCompile Include="src\shaders\DynResPS.hlsl" />
+    <FxCompile Include="src\shaders\DynIdxVS.hlsl" />
+    <FxCompile Include="src\shaders\DynIdxPS.hlsl" />
+    <FxCompile Include="src\shaders\BindfulPS.hlsl" />
+    <FxCompile Include="src\shaders\BindfulVS.hlsl" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\constant_buffer.hlsli" />
+    <None Include="src\shaders\constant_buffer.hlsli" />
   </ItemGroup>
 </Project>
