@@ -67,9 +67,13 @@ namespace {
   };
   auto constexpr kMaxFramesInFlight{2};
   std::vector const kVertices{
-    Vertex{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    Vertex{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    Vertex{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    Vertex{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    Vertex{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    Vertex{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+  };
+  std::vector<std::uint16_t> kIndices{
+    0, 1, 2, 2, 3, 0
   };
 
   VKAPI_ATTR auto VKAPI_CALL DebugCallback(
@@ -999,7 +1003,7 @@ private:
 
     void* data;
     if (vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data) != VK_SUCCESS) {
-      throw std::runtime_error{"Failed to map vertex buffer memory."};
+      throw std::runtime_error{"Failed to map staging buffer memory for vertex upload."};
     }
 
     std::memcpy(data, kVertices.data(), buffer_size);
@@ -1008,6 +1012,29 @@ private:
 
     CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertex_buffer_, vertex_buffer_memory_);
     CopyBuffer(staging_buffer, vertex_buffer_, buffer_size);
+
+    vkDestroyBuffer(device_, staging_buffer, nullptr);
+    vkFreeMemory(device_, staging_buffer_memory, nullptr);
+  }
+
+  auto CreateIndexBuffer() {
+    VkDeviceSize const buffer_size{sizeof(kIndices[0]) * kIndices.size()};
+
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_buffer_memory;
+    CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+
+    void* data;
+    if (vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data) != VK_SUCCESS) {
+      throw std::runtime_error{"Failed to map staging buffer memory for index upload."};
+    }
+
+    std::memcpy(data, kIndices.data(), buffer_size);
+
+    vkUnmapMemory(device_, staging_buffer_memory);
+
+    CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, index_buffer_, index_buffer_memory_);
+    CopyBuffer(staging_buffer, index_buffer_, buffer_size);
 
     vkDestroyBuffer(device_, staging_buffer, nullptr);
     vkFreeMemory(device_, staging_buffer_memory, nullptr);
@@ -1068,6 +1095,7 @@ private:
     CreateFramebuffers();
     CreateCommandPool();
     CreateVertexBuffer();
+    CreateIndexBuffer();
     CreateCommandBuffers();
     CreateSyncObjects();
   }
@@ -1105,6 +1133,7 @@ private:
     std::array const vertex_buffers{vertex_buffer_};
     std::array constexpr offsets{static_cast<VkDeviceSize>(0)};
     vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers.data(), offsets.data());
+    vkCmdBindIndexBuffer(command_buffer, index_buffer_, 0, VK_INDEX_TYPE_UINT16);
 
     VkViewport const viewport{
       .x = 0,
@@ -1122,7 +1151,7 @@ private:
 
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-    vkCmdDraw(command_buffer, static_cast<std::uint32_t>(kVertices.size()), 1, 0, 0);
+    vkCmdDrawIndexed(command_buffer, static_cast<std::uint32_t>(kIndices.size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(command_buffer);
 
     if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
@@ -1212,6 +1241,9 @@ private:
       vkDestroySemaphore(device_, image_available_semaphores_[i], nullptr);
     }
 
+    vkDestroyBuffer(device_, index_buffer_, nullptr);
+    vkFreeMemory(device_, index_buffer_memory_, nullptr);
+
     vkDestroyBuffer(device_, vertex_buffer_, nullptr);
     vkFreeMemory(device_, vertex_buffer_memory_, nullptr);
 
@@ -1258,8 +1290,10 @@ private:
   VkPipeline pipeline_{VK_NULL_HANDLE};
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
   VkCommandPool command_pool_{VK_NULL_HANDLE};
-  VkBuffer vertex_buffer_;
-  VkDeviceMemory vertex_buffer_memory_;
+  VkBuffer vertex_buffer_{VK_NULL_HANDLE};
+  VkDeviceMemory vertex_buffer_memory_{VK_NULL_HANDLE};
+  VkBuffer index_buffer_{VK_NULL_HANDLE};
+  VkDeviceMemory index_buffer_memory_{VK_NULL_HANDLE};
   std::vector<VkCommandBuffer> command_buffers_;
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
