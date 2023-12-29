@@ -1369,7 +1369,6 @@ private:
     }
 
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
-    vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
 
     for (auto i{0}; i < kMaxFramesInFlight; i++) {
       vkUnmapMemory(device_, uniform_buffer_memories_[i]);
@@ -1385,11 +1384,11 @@ private:
 
     vkDestroyCommandPool(device_, command_pool_, nullptr);
 
-    vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
-
     vkDestroyPipeline(device_, pipeline_, nullptr);
 
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+
+    vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
 
     vkDestroyRenderPass(device_, render_pass_, nullptr);
 
