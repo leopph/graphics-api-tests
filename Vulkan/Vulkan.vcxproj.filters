@@ -26,4 +26,9 @@
     <CustomBuild Include="src\shaders\fragment.frag" />
     <CustomBuild Include="src\shaders\vertex.vert" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\shaders\interop.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>
