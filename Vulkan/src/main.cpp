@@ -757,28 +757,14 @@ private:
       .primitiveRestartEnable = VK_FALSE
     };
 
-    VkViewport const viewport{
-      .x = 0,
-      .y = 0,
-      .width = static_cast<float>(swap_chain_extent_.width),
-      .height = static_cast<float>(swap_chain_extent_.height),
-      .minDepth = 0,
-      .maxDepth = 1
-    };
-
-    VkRect2D const scissor{
-      .offset{0, 0},
-      .extent = swap_chain_extent_
-    };
-
-    VkPipelineViewportStateCreateInfo const viewport_state_create_info{
+    VkPipelineViewportStateCreateInfo constexpr viewport_state_create_info{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
       .pNext = nullptr,
       .flags = 0,
       .viewportCount = 1,
-      .pViewports = &viewport,
+      .pViewports = nullptr,
       .scissorCount = 1,
-      .pScissors = &scissor
+      .pScissors = nullptr
     };
 
     VkPipelineRasterizationStateCreateInfo constexpr raster_state_create_info{
