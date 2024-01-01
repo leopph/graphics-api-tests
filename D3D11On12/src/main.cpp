@@ -2,17 +2,13 @@
 #include <d3d12.h>
 #include <d3d11on12.h>
 #include <dxgi1_6.h>
-#include <d3dx12.h>
 #include <wrl/client.h>
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <memory>
-
-extern "C" {
-__declspec(dllexport) extern UINT const D3D12SDKVersion{D3D12_SDK_VERSION};
-__declspec(dllexport) extern char const* D3D12SDKPath{".\\D3D12\\"};
-}
+#include <format>
 
 namespace {
   auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
@@ -193,7 +189,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  UINT64 frameIdx{0};
+  int frame_count{0};
 
   // CREATE SWAPCHAIN
 
@@ -306,6 +302,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DispatchMessageW(&msg);
     }
 
+    auto const frame_idx{frame_count % MAX_FRAMES_IN_FLIGHT};
+
+    OutputDebugStringW(std::format(L"FRAME COUNT: {}\n", frame_count).c_str());
+
     imCtx->ClearRenderTargetView(texRtv.Get(), std::array{1.0f, 0.0f, 1.0f, 1.0f}.data());
     imCtx->Flush();
 
@@ -313,30 +313,74 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = device11On12->UnwrapUnderlyingResource(tex2d.Get(), cmdQueue.Get(), IID_PPV_ARGS(&tex2d12));
     assert(SUCCEEDED(hr));
 
-    std::array<D3D12_RESOURCE_BARRIER, 2> const beforeBarriers{
-      CD3DX12_RESOURCE_BARRIER::Transition(tex2d12.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE),
-      CD3DX12_RESOURCE_BARRIER::Transition(swapChainBufs[backBufIdx].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST)
+    std::array const beforeBarriers{
+      D3D12_RESOURCE_BARRIER{
+        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        {
+          D3D12_RESOURCE_TRANSITION_BARRIER{
+            tex2d12.Get(),
+            0,
+            D3D12_RESOURCE_STATE_COMMON,
+            D3D12_RESOURCE_STATE_COPY_SOURCE
+          }
+        }
+      },
+      D3D12_RESOURCE_BARRIER{
+        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        {
+          D3D12_RESOURCE_TRANSITION_BARRIER{
+            swapChainBufs[backBufIdx].Get(),
+            0,
+            D3D12_RESOURCE_STATE_PRESENT,
+            D3D12_RESOURCE_STATE_COPY_DEST
+          }
+        }
+      }
     };
 
-    std::array<D3D12_RESOURCE_BARRIER, 2> const afterBarriers{
-      CD3DX12_RESOURCE_BARRIER::Transition(tex2d12.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON),
-      CD3DX12_RESOURCE_BARRIER::Transition(swapChainBufs[backBufIdx].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT)
+    std::array const afterBarriers{
+      D3D12_RESOURCE_BARRIER{
+        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        {
+          D3D12_RESOURCE_TRANSITION_BARRIER{
+            tex2d12.Get(),
+            0,
+            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            D3D12_RESOURCE_STATE_COMMON
+          }
+        }
+      },
+      D3D12_RESOURCE_BARRIER{
+        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        {
+          D3D12_RESOURCE_TRANSITION_BARRIER{
+            swapChainBufs[backBufIdx].Get(),
+            0,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_PRESENT
+          }
+        }
+      }
     };
 
-    hr = cmdAllocs[frameIdx]->Reset();
+    hr = cmdAllocs[frame_idx]->Reset();
     assert(SUCCEEDED(hr));
 
-    hr = cmdLists[frameIdx]->Reset(cmdAllocs[frameIdx].Get(), nullptr);
+    hr = cmdLists[frame_idx]->Reset(cmdAllocs[frame_idx].Get(), nullptr);
     assert(SUCCEEDED(hr));
 
-    cmdLists[frameIdx]->ResourceBarrier(static_cast<UINT>(std::size(beforeBarriers)), beforeBarriers.data());
-    cmdLists[frameIdx]->CopyResource(swapChainBufs[backBufIdx].Get(), tex2d12.Get());
-    cmdLists[frameIdx]->ResourceBarrier(static_cast<UINT>(std::size(afterBarriers)), afterBarriers.data());
+    cmdLists[frame_idx]->ResourceBarrier(static_cast<UINT>(std::size(beforeBarriers)), beforeBarriers.data());
+    cmdLists[frame_idx]->CopyResource(swapChainBufs[backBufIdx].Get(), tex2d12.Get());
+    cmdLists[frame_idx]->ResourceBarrier(static_cast<UINT>(std::size(afterBarriers)), afterBarriers.data());
 
-    hr = cmdLists[frameIdx]->Close();
+    hr = cmdLists[frame_idx]->Close();
     assert(SUCCEEDED(hr));
 
-    cmdQueue->ExecuteCommandLists(1, CommandListCast(cmdLists[frameIdx].GetAddressOf()));
+    cmdQueue->ExecuteCommandLists(1, std::bit_cast<ID3D12CommandList**>(cmdLists[frame_idx].GetAddressOf()));
 
     ++miscFenceVal;
     hr = cmdQueue->Signal(miscFence.Get(), miscFenceVal);
@@ -350,6 +394,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     waitForInFlightFrameLimit();
     backBufIdx = swapChain->GetCurrentBackBufferIndex();
-    frameIdx = (frameIdx + 1) % MAX_FRAMES_IN_FLIGHT;
+    ++frame_count;
   }
 }
