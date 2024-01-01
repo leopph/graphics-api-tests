@@ -1,14 +1,15 @@
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+
 #include <d3d12.h>
-#include <d3d11on12.h>
 #include <dxgi1_6.h>
+#include <d3d11on12.h>
+
 #include <wrl/client.h>
 
 #include <array>
-#include <bit>
 #include <cassert>
 #include <memory>
-#include <format>
 
 namespace {
   auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
@@ -21,280 +22,222 @@ namespace {
 }
 
 auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance, [[maybe_unused]] _In_ wchar_t* const lpCmdLine, _In_ int const nShowCmd) -> int {
-  // CREATE WINDOW
-
-  WNDCLASSW const windowClass{
+  WNDCLASSW const window_class{
     .lpfnWndProc = &WindowProc,
     .hInstance = hInstance,
     .hCursor = LoadCursorW(nullptr, IDC_ARROW),
     .lpszClassName = L"D3D11On12Test"
   };
 
-  auto const result{RegisterClassW(&windowClass)};
+  auto const result{RegisterClassW(&window_class)};
   assert(result);
 
-  std::unique_ptr<std::remove_pointer_t<HWND>, decltype([](HWND const hwnd) -> void { if (hwnd) { DestroyWindow(hwnd); } })> const hwnd{CreateWindowExW(0, windowClass.lpszClassName, L"D3D11On12Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr)};
-  assert(hwnd);
+  using WindowDeleterType = decltype([](HWND const hwnd) {
+    if (hwnd) {
+      DestroyWindow(hwnd);
+    }
+  });
 
+  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleterType> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D11On12Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr)};
+  assert(hwnd);
   ShowWindow(hwnd.get(), nShowCmd);
 
   HRESULT hr{};
 
   using Microsoft::WRL::ComPtr;
 
-  // CREATE D3D12 DEVICE
-
 #ifndef NDEBUG
-  {
-    ComPtr<ID3D12Debug5> debug;
-    hr = D3D12GetDebugInterface(IID_PPV_ARGS(debug.GetAddressOf()));
-    assert(SUCCEEDED(hr));
-
-    debug->EnableDebugLayer();
-  }
+  ComPtr<ID3D12Debug5> debug;
+  hr = D3D12GetDebugInterface(IID_PPV_ARGS(&debug));
+  assert(SUCCEEDED(hr));
+  debug->EnableDebugLayer();
 #endif
 
-  UINT dxgiFactoryFlags{0};
+  UINT factory_create_flags{0};
 #ifndef NDEBUG
-  dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+  factory_create_flags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
 
   ComPtr<IDXGIFactory7> factory;
-  hr = CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(factory.GetAddressOf()));
+  hr = CreateDXGIFactory2(factory_create_flags, IID_PPV_ARGS(&factory));
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D12Device9> device;
-  hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(device.GetAddressOf()));
+  hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device));
   assert(SUCCEEDED(hr));
 
 #ifndef NDEBUG
-  {
-    ComPtr<ID3D12InfoQueue> infoQueue;
-    hr = device.As(&infoQueue);
-    assert(SUCCEEDED(hr));
-
-    hr = infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
-    assert(SUCCEEDED(hr));
-
-    hr = infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
-    assert(SUCCEEDED(hr));
-  }
+  ComPtr<ID3D12InfoQueue> info_queue;
+  hr = device.As(&info_queue);
+  assert(SUCCEEDED(hr));
+  hr = info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+  assert(SUCCEEDED(hr));
+  hr = info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+  assert(SUCCEEDED(hr));
 #endif
 
-  // CREATE D3D12 COMMAND ALLOCATOR AND LISTS
+  constexpr auto max_frames_in_flight{1};
 
-  constexpr auto MAX_FRAMES_IN_FLIGHT{2};
-
-  D3D12_COMMAND_QUEUE_DESC constexpr commandQueueDesc{
+  D3D12_COMMAND_QUEUE_DESC constexpr queue_desc{
     .Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
     .Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
     .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE,
     .NodeMask = 0
   };
 
-  ComPtr<ID3D12CommandQueue> cmdQueue;
-  hr = device->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&cmdQueue));
+  ComPtr<ID3D12CommandQueue> queue;
+  hr = device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&queue));
   assert(SUCCEEDED(hr));
 
-  std::array<ComPtr<ID3D12CommandAllocator>, MAX_FRAMES_IN_FLIGHT> cmdAllocs;
-  std::array<ComPtr<ID3D12GraphicsCommandList7>, MAX_FRAMES_IN_FLIGHT> cmdLists;
+  std::array<ComPtr<ID3D12CommandAllocator>, max_frames_in_flight> command_allocators;
+  std::array<ComPtr<ID3D12GraphicsCommandList7>, max_frames_in_flight> command_lists;
 
-  for (auto i{0}; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&cmdAllocs[i]));
+  for (auto i{0}; i < max_frames_in_flight; i++) {
+    hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocators[i]));
     assert(SUCCEEDED(hr));
 
-    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&cmdLists[i]));
+    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&command_lists[i]));
     assert(SUCCEEDED(hr));
   }
 
-  // CREATE D3D11 DEVICE
+  constexpr auto swap_chain_buffer_count{2};
 
-  UINT creationFlags{0};
-#ifndef NDEBUG
-  creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
+  DXGI_SWAP_CHAIN_DESC1 constexpr swap_chain_desc{
+    .Width = 1,
+    .Height = 1,
+    .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+    .Stereo = FALSE,
+    .SampleDesc = {.Count = 1, .Quality = 0},
+    .BufferUsage = 0,
+    .BufferCount = swap_chain_buffer_count,
+    .Scaling = DXGI_SCALING_NONE,
+    .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
+    .Flags = 0
+  };
 
-  ComPtr<ID3D11Device> device11;
-  ComPtr<ID3D11DeviceContext> imCtx;
-  hr = D3D11On12CreateDevice(device.Get(), creationFlags, nullptr, 0, std::array<IUnknown*, 1>{cmdQueue.Get()}.data(), 1, 0, &device11, &imCtx, nullptr);
+  ComPtr<IDXGISwapChain1> tmp_swap_chain;
+  hr = factory->CreateSwapChainForHwnd(queue.Get(), hwnd.get(), &swap_chain_desc, nullptr, nullptr, &tmp_swap_chain);
   assert(SUCCEEDED(hr));
 
-#ifndef NDEBUG
-  ComPtr<ID3D11Debug> d3dDebug;
-  hr = device11.As(&d3dDebug);
+  ComPtr<IDXGISwapChain4> swap_chain;
+  hr = tmp_swap_chain.As(&swap_chain);
   assert(SUCCEEDED(hr));
 
-  ComPtr<ID3D11InfoQueue> d3dInfoQueue;
-  hr = d3dDebug.As<ID3D11InfoQueue>(&d3dInfoQueue);
+  auto back_buffer_idx{swap_chain->GetCurrentBackBufferIndex()};
+
+  std::array<ComPtr<ID3D12Resource2>, swap_chain_buffer_count> back_buffers;
+
+  for (auto i{0}; i < swap_chain_buffer_count; i++) {
+    hr = swap_chain->GetBuffer(i, IID_PPV_ARGS(&back_buffers[i]));
+    assert(SUCCEEDED(hr));
+  }
+
+  UINT64 frame_fence_value{max_frames_in_flight - 1};
+  ComPtr<ID3D12Fence1> frame_fence;
+  hr = device->CreateFence(frame_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&frame_fence));
+  assert(SUCCEEDED(hr));
+  hr = frame_fence->SetName(L"Frame Fence");
   assert(SUCCEEDED(hr));
 
-  hr = d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
+  UINT64 misc_fence_value{0};
+  ComPtr<ID3D12Fence1> misc_fence;
+  hr = device->CreateFence(misc_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&misc_fence));
+  assert(SUCCEEDED(hr));
+  hr = misc_fence->SetName(L"Misc Fence");
   assert(SUCCEEDED(hr));
 
-  hr = d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
-  assert(SUCCEEDED(hr));
-#endif
-
-  // GET D3D11On12 DEVICE
-
-  ComPtr<ID3D11On12Device2> device11On12;
-  hr = device11.As(&device11On12);
-  assert(SUCCEEDED(hr));
-
-  // CREATE D3D12 FENCE
-
-  UINT64 frameFenceVal{MAX_FRAMES_IN_FLIGHT - 1};
-
-  ComPtr<ID3D12Fence1> frameFence;
-  hr = device->CreateFence(frameFenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&frameFence));
-  assert(SUCCEEDED(hr));
-
-  hr = frameFence->SetName(L"Frame Fence");
-  assert(SUCCEEDED(hr));
-
-  UINT64 miscFenceVal{0};
-
-  ComPtr<ID3D12Fence1> miscFence;
-  hr = device->CreateFence(miscFenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&miscFence));
-  assert(SUCCEEDED(hr));
-
-  hr = miscFence->SetName(L"Misc Fence");
-  assert(SUCCEEDED(hr));
-
-  auto const signalAndWaitFence{
-    [&cmdQueue](ID3D12Fence* const fence, UINT64 const signalValue, UINT64 const waitValue) {
-      [[maybe_unused]] auto hr1{cmdQueue->Signal(fence, signalValue)};
+  auto const signal_and_wait_fence{
+    [&queue](ID3D12Fence* const fence, UINT64 const signal_value, UINT64 const wait_value) {
+      [[maybe_unused]] auto hr1{queue->Signal(fence, signal_value)};
       assert(SUCCEEDED(hr1));
 
-      if (fence->GetCompletedValue() < waitValue) {
-        hr1 = fence->SetEventOnCompletion(waitValue, nullptr);
+      if (fence->GetCompletedValue() < wait_value) {
+        hr1 = fence->SetEventOnCompletion(wait_value, nullptr);
         assert(SUCCEEDED(hr1));
       }
     }
   };
 
-  auto const waitForInFlightFrameLimit{
+  auto const wait_for_in_flight_frames{
     [&] {
-      auto const signalValue{++frameFenceVal};
-      auto const waitValue{signalValue - MAX_FRAMES_IN_FLIGHT + 1};
-      signalAndWaitFence(frameFence.Get(), signalValue, waitValue);
+      auto const signal_value{++frame_fence_value};
+      auto const wait_value{signal_value - max_frames_in_flight + 1};
+      signal_and_wait_fence(frame_fence.Get(), signal_value, wait_value);
     }
   };
 
-  auto const waitForAllFrames{
+  auto const wait_for_gpu_idle{
     [&] {
-      auto const signalValue{++frameFenceVal};
-      auto const waitValue{signalValue};
-      signalAndWaitFence(frameFence.Get(), signalValue, waitValue);
+      ComPtr<ID3D12Fence1> fence;
+      hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+      assert(SUCCEEDED(hr));
+      signal_and_wait_fence(fence.Get(), 1, 1);
     }
   };
 
-  int frame_count{0};
+  UINT device_creation_flags11{0};
+#ifndef NDEBUG
+  device_creation_flags11 |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
 
-  // CREATE SWAPCHAIN
+  ComPtr<ID3D11Device> device11;
+  ComPtr<ID3D11DeviceContext> im_ctx11;
+  hr = D3D11On12CreateDevice(device.Get(), device_creation_flags11, nullptr, 0, std::array<IUnknown*, 1>{queue.Get()}.data(), 1, 0, &device11, &im_ctx11, nullptr);
+  assert(SUCCEEDED(hr));
 
-  constexpr auto SWAP_CHAIN_BUFFER_COUNT{MAX_FRAMES_IN_FLIGHT};
-  constexpr auto SWAP_CHAIN_FORMAT{DXGI_FORMAT_R8G8B8A8_UNORM};
-  DXGI_SWAP_CHAIN_DESC1 constexpr swapChainDesc{
-    .Width = 1,
-    .Height = 1,
-    .Format = SWAP_CHAIN_FORMAT,
-    .Stereo = FALSE,
-    .SampleDesc = {.Count = 1, .Quality = 0},
-    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-    .BufferCount = SWAP_CHAIN_BUFFER_COUNT,
-    .Scaling = DXGI_SCALING_STRETCH,
-    .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-    .Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
+#ifndef NDEBUG
+  ComPtr<ID3D11Debug> debug11;
+  hr = device11.As(&debug11);
+  assert(SUCCEEDED(hr));
+  ComPtr<ID3D11InfoQueue> info_queue11;
+  hr = debug11.As<ID3D11InfoQueue>(&info_queue11);
+  assert(SUCCEEDED(hr));
+  hr = info_queue11->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
+  assert(SUCCEEDED(hr));
+  hr = info_queue11->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+  assert(SUCCEEDED(hr));
+#endif
+
+  ComPtr<ID3D11On12Device2> device11_on12;
+  hr = device11.As(&device11_on12);
+  assert(SUCCEEDED(hr));
+
+  std::array constexpr tex_data{1.0f, 0.0f, 1.0f, 1.0f};
+
+  D3D11_SUBRESOURCE_DATA const tex_init_data{
+    .pSysMem = tex_data.data(),
+    .SysMemPitch = sizeof(tex_data),
+    .SysMemSlicePitch = 0
   };
 
-  ComPtr<IDXGISwapChain1> tmpSwapChain;
-  hr = factory->CreateSwapChainForHwnd(cmdQueue.Get(), hwnd.get(), &swapChainDesc, nullptr, nullptr, tmpSwapChain.GetAddressOf());
-  assert(SUCCEEDED(hr));
-
-  ComPtr<IDXGISwapChain4> swapChain;
-  hr = tmpSwapChain.As(&swapChain);
-  assert(SUCCEEDED(hr));
-
-  auto backBufIdx{swapChain->GetCurrentBackBufferIndex()};
-
-  // CREATE D3D12 SWAPCHAIN RTVs
-
-  /*D3D12_DESCRIPTOR_HEAP_DESC constexpr rtvHeapDesc{
-    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-    .NumDescriptors = SWAP_CHAIN_BUFFER_COUNT,
-    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-    .NodeMask = 0
-  };
-
-  ComPtr<ID3D12DescriptorHeap> rtvHeap;
-  hr = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(rtvHeap.GetAddressOf()));
-  assert(SUCCEEDED(hr));
-
-  auto const rtvHeapInc{device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)};
-  auto const rtvHeapCpuStart{rtvHeap->GetCPUDescriptorHandleForHeapStart()};
-
-  std::array<ComPtr<ID3D12Resource2>, SWAP_CHAIN_BUFFER_COUNT> backBuffers;
-  std::array<CD3DX12_CPU_DESCRIPTOR_HANDLE, SWAP_CHAIN_BUFFER_COUNT> backBufferRTVs{};
-
-  for (UINT i = 0; i < SWAP_CHAIN_BUFFER_COUNT; i++) {
-    hr = swapChain->GetBuffer(i, IID_PPV_ARGS(backBuffers[i].GetAddressOf()));
-    assert(SUCCEEDED(hr));
-
-    backBufferRTVs[i] = CD3DX12_CPU_DESCRIPTOR_HANDLE{rtvHeapCpuStart, static_cast<INT>(i), rtvHeapInc};
-
-    D3D12_RENDER_TARGET_VIEW_DESC constexpr rtvDesc{
-      .Format = SWAP_CHAIN_FORMAT,
-      .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-      .Texture2D = {.MipSlice = 0, .PlaneSlice = 0}
-    };
-
-    device->CreateRenderTargetView(backBuffers[i].Get(), &rtvDesc, backBufferRTVs[i]);
-  }*/
-
-  // CREATE D3D11 SWAPCHAIN RTVs
-
-  std::array<ComPtr<ID3D12Resource2>, SWAP_CHAIN_BUFFER_COUNT> swapChainBufs;
-
-  for (auto i{0}; i < SWAP_CHAIN_BUFFER_COUNT; i++) {
-    hr = swapChain->GetBuffer(i, IID_PPV_ARGS(&swapChainBufs[i]));
-    assert(SUCCEEDED(hr));
-  }
-
-  D3D11_TEXTURE2D_DESC constexpr tex2dDesc{
+  D3D11_TEXTURE2D_DESC constexpr tex_desc{
     .Width = 1,
     .Height = 1,
     .MipLevels = 1,
     .ArraySize = 1,
     .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
     .SampleDesc = {.Count = 1, .Quality = 0},
-    .Usage = D3D11_USAGE_DEFAULT,
-    .BindFlags = D3D11_BIND_RENDER_TARGET,
+    .Usage = D3D11_USAGE_IMMUTABLE,
+    .BindFlags = D3D11_BIND_SHADER_RESOURCE,
     .CPUAccessFlags = 0,
     .MiscFlags = 0
   };
 
-  ComPtr<ID3D11Texture2D> tex2d;
-  hr = device11->CreateTexture2D(&tex2dDesc, nullptr, &tex2d);
+  ComPtr<ID3D11Texture2D> tex;
+  hr = device11->CreateTexture2D(&tex_desc, &tex_init_data, &tex);
   assert(SUCCEEDED(hr));
 
-  D3D11_RENDER_TARGET_VIEW_DESC constexpr texRtvDesc{
-    .Format = tex2dDesc.Format,
-    .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-    .Texture2D = {.MipSlice = 0}
-  };
+  im_ctx11->Flush();
 
-  ComPtr<ID3D11RenderTargetView> texRtv;
-  hr = device11->CreateRenderTargetView(tex2d.Get(), &texRtvDesc, &texRtv);
-  assert(SUCCEEDED(hr));
+  int frame_count{0};
 
   while (true) {
     MSG msg;
 
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
       if (msg.message == WM_QUIT) {
-        waitForAllFrames();
+        wait_for_gpu_idle();
         return static_cast<int>(msg.wParam);
       }
 
@@ -302,98 +245,89 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DispatchMessageW(&msg);
     }
 
-    auto const frame_idx{frame_count % MAX_FRAMES_IN_FLIGHT};
+    auto const frame_idx{frame_count % max_frames_in_flight};
 
-    OutputDebugStringW(std::format(L"FRAME COUNT: {}\n", frame_count).c_str());
-
-    imCtx->ClearRenderTargetView(texRtv.Get(), std::array{1.0f, 0.0f, 1.0f, 1.0f}.data());
-    imCtx->Flush();
-
-    ComPtr<ID3D12Resource> tex2d12;
-    hr = device11On12->UnwrapUnderlyingResource(tex2d.Get(), cmdQueue.Get(), IID_PPV_ARGS(&tex2d12));
+    ComPtr<ID3D12Resource> tex12;
+    // TODO THIS STALLS THE QUEUE
+    hr = device11_on12->UnwrapUnderlyingResource(tex.Get(), queue.Get(), IID_PPV_ARGS(&tex12));
     assert(SUCCEEDED(hr));
 
-    std::array const beforeBarriers{
+    std::array const pre_copy_barriers{
       D3D12_RESOURCE_BARRIER{
-        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        {
-          D3D12_RESOURCE_TRANSITION_BARRIER{
-            tex2d12.Get(),
-            0,
-            D3D12_RESOURCE_STATE_COMMON,
-            D3D12_RESOURCE_STATE_COPY_SOURCE
-          }
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+          .pResource = tex12.Get(),
+          .Subresource = 0,
+          .StateBefore = D3D12_RESOURCE_STATE_COMMON,
+          .StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE
+
         }
       },
       D3D12_RESOURCE_BARRIER{
-        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        {
-          D3D12_RESOURCE_TRANSITION_BARRIER{
-            swapChainBufs[backBufIdx].Get(),
-            0,
-            D3D12_RESOURCE_STATE_PRESENT,
-            D3D12_RESOURCE_STATE_COPY_DEST
-          }
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+          .pResource = back_buffers[back_buffer_idx].Get(),
+          .Subresource = 0,
+          .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+          .StateAfter = D3D12_RESOURCE_STATE_COPY_DEST
+
         }
       }
     };
 
-    std::array const afterBarriers{
+    std::array const post_copy_barriers{
       D3D12_RESOURCE_BARRIER{
-        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        {
-          D3D12_RESOURCE_TRANSITION_BARRIER{
-            tex2d12.Get(),
-            0,
-            D3D12_RESOURCE_STATE_COPY_SOURCE,
-            D3D12_RESOURCE_STATE_COMMON
-          }
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+          .pResource = tex12.Get(),
+          .Subresource = 0,
+          .StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE,
+          .StateAfter = D3D12_RESOURCE_STATE_COMMON
         }
       },
       D3D12_RESOURCE_BARRIER{
-        D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        {
-          D3D12_RESOURCE_TRANSITION_BARRIER{
-            swapChainBufs[backBufIdx].Get(),
-            0,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            D3D12_RESOURCE_STATE_PRESENT
-          }
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+          .pResource = back_buffers[back_buffer_idx].Get(),
+          .Subresource = 0,
+          .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+          .StateAfter = D3D12_RESOURCE_STATE_PRESENT
+
         }
       }
     };
 
-    hr = cmdAllocs[frame_idx]->Reset();
+    hr = command_allocators[frame_idx]->Reset();
     assert(SUCCEEDED(hr));
 
-    hr = cmdLists[frame_idx]->Reset(cmdAllocs[frame_idx].Get(), nullptr);
+    hr = command_lists[frame_idx]->Reset(command_allocators[frame_idx].Get(), nullptr);
     assert(SUCCEEDED(hr));
 
-    cmdLists[frame_idx]->ResourceBarrier(static_cast<UINT>(std::size(beforeBarriers)), beforeBarriers.data());
-    cmdLists[frame_idx]->CopyResource(swapChainBufs[backBufIdx].Get(), tex2d12.Get());
-    cmdLists[frame_idx]->ResourceBarrier(static_cast<UINT>(std::size(afterBarriers)), afterBarriers.data());
+    command_lists[frame_idx]->ResourceBarrier(static_cast<UINT>(std::size(pre_copy_barriers)), pre_copy_barriers.data());
+    command_lists[frame_idx]->CopyResource(back_buffers[back_buffer_idx].Get(), tex12.Get());
+    command_lists[frame_idx]->ResourceBarrier(static_cast<UINT>(std::size(post_copy_barriers)), post_copy_barriers.data());
 
-    hr = cmdLists[frame_idx]->Close();
+    hr = command_lists[frame_idx]->Close();
     assert(SUCCEEDED(hr));
 
-    cmdQueue->ExecuteCommandLists(1, std::bit_cast<ID3D12CommandList**>(cmdLists[frame_idx].GetAddressOf()));
+    queue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{command_lists[frame_idx].Get()}.data());
 
-    ++miscFenceVal;
-    hr = cmdQueue->Signal(miscFence.Get(), miscFenceVal);
+    ++misc_fence_value;
+    hr = queue->Signal(misc_fence.Get(), misc_fence_value);
     assert(SUCCEEDED(hr));
 
-    hr = device11On12->ReturnUnderlyingResource(tex2d.Get(), 1, &miscFenceVal, std::array<ID3D12Fence*, 1>{miscFence.Get()}.data());
+    hr = device11_on12->ReturnUnderlyingResource(tex.Get(), 1, &misc_fence_value, std::array<ID3D12Fence*, 1>{misc_fence.Get()}.data());
     assert(SUCCEEDED(hr));
 
-    hr = swapChain->Present(0, DXGI_PRESENT_ALLOW_TEARING);
+    hr = swap_chain->Present(1, 0);
     assert(SUCCEEDED(hr));
 
-    waitForInFlightFrameLimit();
-    backBufIdx = swapChain->GetCurrentBackBufferIndex();
+    wait_for_in_flight_frames();
+    back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
     ++frame_count;
   }
 }
