@@ -32,8 +32,9 @@
 #endif
 #define MAKE_SHADER_INCLUDE_PATH(x) MAKE_SHADER_INCLUDE_PATH1(x)
 
-#include MAKE_SHADER_INCLUDE_PATH(ps)
 #include MAKE_SHADER_INCLUDE_PATH(vs)
+#include MAKE_SHADER_INCLUDE_PATH(ps)
+#include MAKE_SHADER_INCLUDE_PATH(cs)
 
 
 namespace {
@@ -137,9 +138,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .Format = swap_chain_format,
     .Stereo = FALSE,
     .SampleDesc{.Count = 1, .Quality = 0},
-    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_UNORDERED_ACCESS,
     .BufferCount = swap_chain_buffer_count,
-    .Scaling = DXGI_SCALING_STRETCH,
+    .Scaling = DXGI_SCALING_NONE,
     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
     .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
     .Flags = swap_chain_flags
@@ -177,6 +178,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CreateRenderTargetView(back_buffer.Get(), &rtv_desc, &back_buffer_rtv);
   assert(SUCCEEDED(hr));
 
+  D3D11_UNORDERED_ACCESS_VIEW_DESC constexpr uav_desc{
+    .Format = swap_chain_format,
+    .ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D,
+    .Texture2D = {.MipSlice = 0}
+  };
+
+  ComPtr<ID3D11UnorderedAccessView> back_buffer_uav;
+  hr = device->CreateUnorderedAccessView(back_buffer.Get(), &uav_desc, &back_buffer_uav);
+  assert(SUCCEEDED(hr));
+
   auto multiplane_overlays_support{FALSE};
   auto fullscreen_hardware_composition_support{FALSE};
   auto windowed_hardware_composition_support{FALSE};
@@ -200,6 +211,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   ComPtr<ID3D11PixelShader> pixel_shader;
   hr = device->CreatePixelShader(kpsBin, ARRAYSIZE(kpsBin), nullptr, &pixel_shader);
+  assert(SUCCEEDED(hr));
+
+  ComPtr<ID3D11ComputeShader> compute_shader;
+  hr = device->CreateComputeShader(kcsBin, ARRAYSIZE(kcsBin), nullptr, &compute_shader);
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D11ShaderReflection> vs_reflection;
@@ -304,12 +319,30 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = deferred_ctx->Map(cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &cbuffer_mapped);
     assert(SUCCEEDED(hr));
 
+    std::array constexpr green{0.16f, 0.67f, 0.53f, 1.0f};
+    std::array constexpr red{0.89f, 0.14f, 0.17f, 1.0f};
+
     ConstantBuffer const cbuffer_data{
-      .color = multiplane_overlays_support ? std::array{0.16f, 0.67f, 0.53f, 1.0f} : std::array{0.89f, 0.14f, 0.17f, 1.0f}
+      .square_color = fullscreen_hardware_composition_support ? green : red,
+      .triangle_color = multiplane_overlays_support ? green : red,
+      .position_multiplier = windowed_hardware_composition_support ? std::array{1.0f, 1.0f} : std::array{-1.0f, -1.0f}
     };
 
     std::memcpy(cbuffer_mapped.pData, &cbuffer_data, sizeof cbuffer_data);
     deferred_ctx->Unmap(cbuffer.Get(), 0);
+
+    deferred_ctx->CSSetShader(compute_shader.Get(), nullptr, 0);
+    deferred_ctx->CSSetConstantBuffers(CONSTANT_BUFFER_SLOT, 1, cbuffer.GetAddressOf());
+    deferred_ctx->CSSetUnorderedAccessViews(0, 1, back_buffer_uav.GetAddressOf(), nullptr);
+
+    deferred_ctx->ClearUnorderedAccessViewFloat(back_buffer_uav.Get(), std::array{0.1f, 0.1f, 0.1f, 1.0f}.data());
+    deferred_ctx->Dispatch(50, 50, 1);
+
+    ComPtr<ID3D11CommandList> command_list;
+    hr = deferred_ctx->FinishCommandList(FALSE, &command_list);
+    assert(SUCCEEDED(hr));
+
+    immediate_ctx->ExecuteCommandList(command_list.Get(), FALSE);
 
     UINT constexpr vertex_buffer_stride{2 * sizeof(float)};
     UINT constexpr vertex_buffer_offset{0};
@@ -319,6 +352,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     deferred_ctx->IASetInputLayout(input_layout.Get());
 
     deferred_ctx->VSSetShader(vertex_shader.Get(), nullptr, 0);
+    deferred_ctx->VSSetConstantBuffers(CONSTANT_BUFFER_SLOT, 1, cbuffer.GetAddressOf());
 
     deferred_ctx->PSSetShader(pixel_shader.Get(), nullptr, 0);
     deferred_ctx->PSSetConstantBuffers(CONSTANT_BUFFER_SLOT, 1, cbuffer.GetAddressOf());
@@ -339,10 +373,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     deferred_ctx->OMSetRenderTargets(1, back_buffer_rtv.GetAddressOf(), nullptr);
 
-    deferred_ctx->ClearRenderTargetView(back_buffer_rtv.Get(), std::array{0.1f, 0.1f, 0.1f, 1.0f}.data());
     deferred_ctx->DrawIndexedInstanced(static_cast<UINT>(index_data.size()), 1, 0, 0, 0);
 
-    ComPtr<ID3D11CommandList> command_list;
     hr = deferred_ctx->FinishCommandList(FALSE, &command_list);
     assert(SUCCEEDED(hr));
 

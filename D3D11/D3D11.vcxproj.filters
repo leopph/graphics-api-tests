@@ -33,5 +33,6 @@
   <ItemGroup>
     <FxCompile Include="src\shaders\ps.hlsl" />
     <FxCompile Include="src\shaders\vs.hlsl" />
+    <FxCompile Include="src\shaders\cs.hlsl" />
   </ItemGroup>
 </Project>
