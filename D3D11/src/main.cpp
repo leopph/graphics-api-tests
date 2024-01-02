@@ -301,6 +301,42 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CreateBuffer(&cbuffer_desc, nullptr, &cbuffer);
   assert(SUCCEEDED(hr));
 
+  D3D11_TEXTURE2D_DESC constexpr texture_desc{
+    .Width = 1,
+    .Height = 1,
+    .MipLevels = 1,
+    .ArraySize = 1,
+    .Format = DXGI_FORMAT_R32G32B32A32_FLOAT,
+    .SampleDesc = {.Count = 1, .Quality = 0},
+    .Usage = D3D11_USAGE_IMMUTABLE,
+    .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+    .CPUAccessFlags = 0,
+    .MiscFlags = 0
+  };
+
+  std::array constexpr green{0.16f, 0.67f, 0.53f, 1.0f};
+  std::array constexpr red{0.89f, 0.14f, 0.17f, 1.0f};
+
+  D3D11_SUBRESOURCE_DATA const texture_init_data{
+    .pSysMem = (multiplane_overlays_support ? green : red).data(),
+    .SysMemPitch = 128,
+    .SysMemSlicePitch = 0
+  };
+
+  ComPtr<ID3D11Texture2D> texture;
+  hr = device->CreateTexture2D(&texture_desc, &texture_init_data, &texture);
+  assert(SUCCEEDED(hr));
+
+  D3D11_SHADER_RESOURCE_VIEW_DESC constexpr texture_srv_desc{
+    .Format = texture_desc.Format,
+    .ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D,
+    .Texture2D = {.MostDetailedMip = 0, .MipLevels = 1}
+  };
+
+  ComPtr<ID3D11ShaderResourceView> texture_srv;
+  hr = device->CreateShaderResourceView(texture.Get(), &texture_srv_desc, &texture_srv);
+  assert(SUCCEEDED(hr));
+
   while (true) {
 #ifndef NO_WAITABLE_SWAP_CHAIN
     WaitForSingleObjectEx(frame_latency_waitable_object, 1000, true);
@@ -319,12 +355,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = deferred_ctx->Map(cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &cbuffer_mapped);
     assert(SUCCEEDED(hr));
 
-    std::array constexpr green{0.16f, 0.67f, 0.53f, 1.0f};
-    std::array constexpr red{0.89f, 0.14f, 0.17f, 1.0f};
 
     ConstantBuffer const cbuffer_data{
       .square_color = fullscreen_hardware_composition_support ? green : red,
-      .triangle_color = multiplane_overlays_support ? green : red,
       .position_multiplier = windowed_hardware_composition_support ? std::array{1.0f, 1.0f} : std::array{-1.0f, -1.0f}
     };
 
@@ -355,7 +388,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     deferred_ctx->VSSetConstantBuffers(CONSTANT_BUFFER_SLOT, 1, cbuffer.GetAddressOf());
 
     deferred_ctx->PSSetShader(pixel_shader.Get(), nullptr, 0);
-    deferred_ctx->PSSetConstantBuffers(CONSTANT_BUFFER_SLOT, 1, cbuffer.GetAddressOf());
+    deferred_ctx->PSSetShaderResources(TEXTURE_SLOT, 1, texture_srv.GetAddressOf());
 
     RECT client_rect;
     GetClientRect(hwnd.get(), &client_rect);

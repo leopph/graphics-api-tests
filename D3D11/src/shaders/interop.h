@@ -17,10 +17,10 @@
 #endif
 
 #define CONSTANT_BUFFER_SLOT 0
+#define TEXTURE_SLOT 0
 
 CBUFFER_BEGIN(ConstantBuffer, CONSTANT_BUFFER_SLOT)
   FLOAT4 square_color;
-  FLOAT4 triangle_color;
   FLOAT2 position_multiplier;
   FLOAT2 pad;
 CBUFFER_END
@@ -28,5 +28,4 @@ CBUFFER_END
 #define COMPUTE_SHADER_THREAD_COUNT_X 8
 #define COMPUTE_SHADER_THREAD_COUNT_Y 8
 #define COMPUTE_SHADER_THREAD_COUNT_Z 1
-
 #endif
