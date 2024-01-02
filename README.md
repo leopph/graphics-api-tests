@@ -23,7 +23,7 @@ The D3D11 test implements
 - deferred contexts
 - etc.
 
-There are also separate projects for compute shaders (**D3D11Compute**) and D3D11/D3D12 migration/interop using D3D11On12 (**D3D11On12**).
+There is also a separate project for compute shaders (**D3D11Compute**).
 
 ## OpenGL
 The OpenGL project demonstrates
