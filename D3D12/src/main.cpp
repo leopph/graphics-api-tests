@@ -717,7 +717,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
         .Width = 1,
         .Height = 1,
         .Depth = 1,
-        .RowPitch = sizeof(texColor)
+        .RowPitch = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT
       }
     }
   };
