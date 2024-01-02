@@ -10,14 +10,6 @@
 #include <dxgidebug.h>
 #endif
 
-#ifdef NDEBUG
-#include "shaders/generated/VertexShader.h"
-#include "shaders/generated/PixelShader.h"
-#else
-#include "shaders/generated/VertexShaderDebug.h"
-#include "shaders/generated/PixelShaderDebug.h"
-#endif
-
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -26,11 +18,24 @@
 #include <format>
 #include <vector>
 
+#define MAKE_SHADER_INCLUDE_PATH5(x) #x
+#define MAKE_SHADER_INCLUDE_PATH4(x) MAKE_SHADER_INCLUDE_PATH5(x)
+#define MAKE_SHADER_INCLUDE_PATH3(x, y, z) MAKE_SHADER_INCLUDE_PATH4(x ## y ## z)
+#define MAKE_SHADER_INCLUDE_PATH2(x, y, z) MAKE_SHADER_INCLUDE_PATH3(x, y, z)
+#ifndef NDEBUG
+#define MAKE_SHADER_INCLUDE_PATH1(x) MAKE_SHADER_INCLUDE_PATH2(shaders/generated/Debug/, x, .h)
+#else
+#define MAKE_SHADER_INCLUDE_PATH1(x) MAKE_SHADER_INCLUDE_PATH2(shaders/generated/Release/, x, .h)
+#endif
+#define MAKE_SHADER_INCLUDE_PATH(x) MAKE_SHADER_INCLUDE_PATH1(x)
+
+#include MAKE_SHADER_INCLUDE_PATH(ps)
+#include MAKE_SHADER_INCLUDE_PATH(vs)
+
 using Microsoft::WRL::ComPtr;
 
 
 #define USE_WAITABLE_SWAPCHAIN 0
-#define USE_FENCE 1
 
 
 enum class DisplayMode {
@@ -372,14 +377,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-#if USE_FENCE
-  UINT64 thisFrameFenceValue{MAX_FRAMES_IN_FLIGHT - 1};
-
-  ComPtr<ID3D11Fence> fence;
-  hr = appData->d3dDevice->CreateFence(0, D3D11_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.GetAddressOf()));
-  assert(SUCCEEDED(hr));
-#endif
-
   ComPtr<IDXGIDevice4> dxgiDevice;
   hr = appData->d3dDevice.As(&dxgiDevice);
   assert(SUCCEEDED(hr));
@@ -440,20 +437,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
 #if USE_WAITABLE_SWAPCHAIN
   auto const frameLatencyWaitableObject{appData->swapChain->GetFrameLatencyWaitableObject()};
-#if USE_FENCE
-  hr = appData->swapChain->SetMaximumFrameLatency(16);
-#else
   hr = appData->swapChain->SetMaximumFrameLatency(MAX_FRAMES_IN_FLIGHT);
-#endif
-  assert(SUCCEEDED(hr));
-#else
-#if USE_FENCE
-  hr = dxgiDevice->SetMaximumFrameLatency(16);
 #else
   hr = dxgiDevice->SetMaximumFrameLatency(MAX_FRAMES_IN_FLIGHT);
 #endif
   assert(SUCCEEDED(hr));
-#endif
 
   RecreateSwapChainRTV(*appData);
 
@@ -473,15 +461,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ChangeDisplayMode(hwnd, DEFAULT_DISPLAY_MODE);
 
   ComPtr<ID3D11VertexShader> vertexShader;
-  hr = appData->d3dDevice->CreateVertexShader(gVsBytes, ARRAYSIZE(gVsBytes), nullptr, vertexShader.GetAddressOf());
+  hr = appData->d3dDevice->CreateVertexShader(kvsBin, ARRAYSIZE(kvsBin), nullptr, vertexShader.GetAddressOf());
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D11PixelShader> pixelShader;
-  hr = appData->d3dDevice->CreatePixelShader(gPsBytes, ARRAYSIZE(gPsBytes), nullptr, pixelShader.GetAddressOf());
+  hr = appData->d3dDevice->CreatePixelShader(kpsBin, ARRAYSIZE(kpsBin), nullptr, pixelShader.GetAddressOf());
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D11ShaderReflection> vsReflect;
-  hr = D3DReflect(gVsBytes, ARRAYSIZE(gVsBytes), IID_PPV_ARGS(&vsReflect));
+  hr = D3DReflect(kvsBin, ARRAYSIZE(kvsBin), IID_PPV_ARGS(&vsReflect));
   assert(SUCCEEDED(hr));
 
   D3D11_SHADER_DESC vsDesc;
@@ -500,7 +488,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   }
 
   ComPtr<ID3D11InputLayout> inputLayout;
-  hr = appData->d3dDevice->CreateInputLayout(inputElements.data(), static_cast<UINT>(inputElements.size()), gVsBytes, ARRAYSIZE(gVsBytes), inputLayout.GetAddressOf());
+  hr = appData->d3dDevice->CreateInputLayout(inputElements.data(), static_cast<UINT>(inputElements.size()), kvsBin, ARRAYSIZE(kvsBin), inputLayout.GetAddressOf());
   assert(SUCCEEDED(hr));
 
   std::array constexpr VERTEX_DATA{
@@ -654,19 +642,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     hr = appData->swapChain->Present(appData->syncInterval, appData->syncInterval == 0 ? appData->presentFlags : appData->presentFlags & ~DXGI_PRESENT_ALLOW_TEARING);
     assert(SUCCEEDED(hr));
-
-#if USE_FENCE
-    auto const fenceSignalValue{++thisFrameFenceValue};
-    auto const fenceWaitValue{fenceSignalValue - MAX_FRAMES_IN_FLIGHT + 1};
-
-    hr = imCtx->Signal(fence.Get(), fenceSignalValue);
-    assert(SUCCEEDED(hr));
-
-    if (fence->GetCompletedValue() < fenceWaitValue) {
-      hr = fence->SetEventOnCompletion(fenceWaitValue, nullptr);
-      assert(SUCCEEDED(hr));
-    }
-#endif
 
     while (true) {
       if (auto const deltaTime{std::chrono::steady_clock::now() - lastFrameTimePoint}; deltaTime >= MIN_FRAME_TIME) {
