@@ -19,11 +19,10 @@ These can be toggled using macros. See *main.cpp* for more details.
 The D3D11 test implements
 - independent flip true immediate support for windowed swap chains (replacing the classic fullscreen mode)
 - waitable swap chains
-- frame latency control using fences
+- automatic input layout generation using shader reflection
+- compute shaders
 - deferred contexts
 - etc.
-
-There is also a separate project for compute shaders (**D3D11Compute**).
 
 ## OpenGL
 The OpenGL project demonstrates
