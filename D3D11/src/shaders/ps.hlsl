@@ -1,6 +1,4 @@
-cbuffer colorBuffer : register(b0) {
-    float4 color;
-};
+#include "interop.h"
 
 float4 main() : SV_TARGET {
     return color;

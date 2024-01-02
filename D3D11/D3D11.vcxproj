@@ -86,6 +86,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\PixelShader.h" />
+    <ClInclude Include="src\shaders\interop.h" />
     <ClInclude Include="src\VertexShader.h" />
   </ItemGroup>
   <ItemGroup>
