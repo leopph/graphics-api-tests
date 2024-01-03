@@ -591,6 +591,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
+  constexpr std::array<std::uint8_t, 4> red{255, 0, 0, 255};
+  constexpr std::array<std::uint8_t, 4> green{0, 255, 0, 255};
+  constexpr std::array<std::uint8_t, 4> blue{0, 0, 255, 255};
+
   // CREATE UPLOAD BUFFER
 
   D3D12_HEAP_PROPERTIES constexpr upload_heap_properties{
@@ -702,8 +706,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   // CREATE TEXTURE
 
-  std::array<unsigned char, 4> constexpr texColor{255, 0, 255, 255};
-
   D3D12_HEAP_PROPERTIES constexpr tex_heap_properties{
     .Type = D3D12_HEAP_TYPE_DEFAULT,
     .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
@@ -739,7 +741,19 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   // UPLOAD TEXTURE DATA
 
-  std::memcpy(mappedUploadBuf, texColor.data(), sizeof(texColor));
+#ifndef NO_DYNAMIC_RESOURCES
+  if (dynamic_resources_supported) {
+    std::memcpy(mappedUploadBuf, green.data(), sizeof(green));
+  } else {
+#endif
+#ifndef NO_DYNAMIC_INDEXING
+    std::memcpy(mappedUploadBuf, blue.data(), sizeof(blue));
+#else
+    std::memcpy(mappedUploadBuf, red.data(), sizeof(red));
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
+  }
+#endif
 
   hr = cmdLists[frameIdx]->Reset(cmdAllocators[frameIdx].Get(), pso.Get());
   assert(SUCCEEDED(hr));
@@ -943,8 +957,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
     cmdLists[frameIdx]->ResourceBarrier(1, &swapChainRtvBarrier);
 
-    float constexpr clearColor[]{0.2f, 0.3f, 0.3f, 1.f};
-    cmdLists[frameIdx]->ClearRenderTargetView(backBufferRTVs[backBufIdx], clearColor, 0, nullptr);
+    cmdLists[frameIdx]->ClearRenderTargetView(backBufferRTVs[backBufIdx], std::array{0.1f, 0.1f, 0.1f, 1.0f}.data(), 0, nullptr);
     cmdLists[frameIdx]->OMSetRenderTargets(1, &backBufferRTVs[backBufIdx], FALSE, nullptr);
 
     cmdLists[frameIdx]->ExecuteBundle(bundle.Get());
