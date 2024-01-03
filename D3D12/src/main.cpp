@@ -1,15 +1,22 @@
 /* D3D12 test project demonstrating
- * - different geometry pipeline methods
+ * - multiple geometry pipeline methods
  *   - vertex pushing
  *   - vertex pulling
- * - different resource binding methods
+ * - multiple resource binding methods
  *   - bindful descriptors
  *   - bindless descriptors using SM 5.1 dynamic indexing and unbounded arrays
  *   - bindless descriptors using SM 6.6 dynamic resources
+ * - multiple barrier usage methods
+ *   - legacy resource barriers
+ *   - enhanced barriers
+ *
  * Define NO_VERTEX_PULLING to prevent reading vertex buffers as shader resources
+ *
  * Define NO_DYNAMIC_RESOURCES to prevent the use of SM 6.6 dynamic resources even on supported hardware.
  * Define NO_DYNAMIC_INDEXING to prevent the use of SM 5.1 dynamic indexing and unbounded arrays.
  * Define both NO_DYNAMIC_RESOURCES and NO_DYNAMIC_INDEXING to force the use of the traditional bindful approach.
+ *
+ * NO_ENHANCED_BARRIERS to prevent to use of enhanced barriers even on supported hardware.
  */
 
 // Uncomment this if you want to opt out of reading vertex buffers as shader resources
@@ -20,6 +27,9 @@
 
 // Uncomment this if you want to opt out of using SM 5.1 dynamic indexing and unbounded arrays
 // #define NO_DYNAMIC_INDEXING
+
+// Uncomment this if you want to opt out of using enhanced barriers
+// #define NO_ENHANCED_BARRIERS
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -86,7 +96,6 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
   return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 }
-
 
 auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance,
                      [[maybe_unused]] _In_ wchar_t* const lpCmdLine, _In_ int const nShowCmd) -> int {
@@ -170,6 +179,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const dynamic_resources_supported{options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >= D3D_SHADER_MODEL_6_6};
 #endif
 
+#ifndef NO_ENHANCED_BARRIERS
+  D3D12_FEATURE_DATA_D3D12_OPTIONS12 option12;
+  hr = device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &option12, sizeof option12);
+  assert(SUCCEEDED(hr));
+
+  auto const enhanced_barriers_supported{option12.EnhancedBarriersSupported};
+#endif
+
 #ifdef NO_VERTEX_PULLING
   OutputDebugStringW(L"Using the input assembler.\n");
 #else
@@ -187,6 +204,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   OutputDebugStringW(L"Using bindful resources.\n");
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
+  }
+#endif
+
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+    OutputDebugStringW(L"Using enhanced barriers.\n");
+  } else {
+#endif
+    OutputDebugStringW(L"Using legacy resource barriers.\n");
+#ifndef NO_ENHANCED_BARRIERS
   }
 #endif
 
@@ -310,7 +337,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   UINT64 frameIdx{0};
 
   std::array<ComPtr<ID3D12CommandAllocator>, MAX_FRAMES_IN_FLIGHT> cmdAllocators;
-  std::array<ComPtr<ID3D12GraphicsCommandList6>, MAX_FRAMES_IN_FLIGHT> cmdLists;
+  std::array<ComPtr<ID3D12GraphicsCommandList7>, MAX_FRAMES_IN_FLIGHT> cmdLists;
 
   for (auto i{0}; i < MAX_FRAMES_IN_FLIGHT; i++) {
     hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(cmdAllocators[i].GetAddressOf()));
@@ -949,34 +976,96 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
     cmdLists[frameIdx]->RSSetScissorRects(1, &scissorRect);
 
-    D3D12_RESOURCE_BARRIER const swapChainRtvBarrier{
-      .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-      .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-      .Transition = {
+#ifndef NO_ENHANCED_BARRIERS
+    if (enhanced_barriers_supported) {
+      D3D12_TEXTURE_BARRIER const pre_render_barrier{
+        .SyncBefore = D3D12_BARRIER_SYNC_ALL,
+        .SyncAfter = D3D12_BARRIER_SYNC_ALL,
+        .AccessBefore = D3D12_BARRIER_ACCESS_COMMON,
+        .AccessAfter = D3D12_BARRIER_ACCESS_RENDER_TARGET,
+        .LayoutBefore = D3D12_BARRIER_LAYOUT_PRESENT,
+        .LayoutAfter = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
         .pResource = backBuffers[backBufIdx].Get(),
-        .Subresource = 0,
-        .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
-        .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
-      }
-    };
-    cmdLists[frameIdx]->ResourceBarrier(1, &swapChainRtvBarrier);
+        .Subresources = {
+          .IndexOrFirstMipLevel = 0,
+          .NumMipLevels = 1,
+          .FirstArraySlice = 0,
+          .NumArraySlices = 1,
+          .FirstPlane = 0,
+          .NumPlanes = 1
+        },
+        .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE
+      };
+      D3D12_BARRIER_GROUP const pre_render_barrier_group{
+        .Type = D3D12_BARRIER_TYPE_TEXTURE,
+        .NumBarriers = 1,
+        .pTextureBarriers = &pre_render_barrier
+      };
+      cmdLists[frameIdx]->Barrier(1, &pre_render_barrier_group);
+    } else {
+#endif
+      D3D12_RESOURCE_BARRIER const swapChainRtvBarrier{
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+          .pResource = backBuffers[backBufIdx].Get(),
+          .Subresource = 0,
+          .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+          .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
+        }
+      };
+      cmdLists[frameIdx]->ResourceBarrier(1, &swapChainRtvBarrier);
+#ifndef NO_ENHANCED_BARRIERS
+    }
+#endif
 
     cmdLists[frameIdx]->ClearRenderTargetView(backBufferRTVs[backBufIdx], std::array{0.1f, 0.1f, 0.1f, 1.0f}.data(), 0, nullptr);
     cmdLists[frameIdx]->OMSetRenderTargets(1, &backBufferRTVs[backBufIdx], FALSE, nullptr);
 
     cmdLists[frameIdx]->ExecuteBundle(bundle.Get());
 
-    D3D12_RESOURCE_BARRIER const swapChainPresentBarrier{
-      .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-      .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-      .Transition = {
+#ifndef NO_ENHANCED_BARRIERS
+    if (enhanced_barriers_supported) {
+      D3D12_TEXTURE_BARRIER const post_render_barrier{
+        .SyncBefore = D3D12_BARRIER_SYNC_ALL,
+        .SyncAfter = D3D12_BARRIER_SYNC_ALL,
+        .AccessBefore = D3D12_BARRIER_ACCESS_RENDER_TARGET,
+        .AccessAfter = D3D12_BARRIER_ACCESS_COMMON,
+        .LayoutBefore = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
+        .LayoutAfter = D3D12_BARRIER_LAYOUT_PRESENT,
         .pResource = backBuffers[backBufIdx].Get(),
-        .Subresource = 0,
-        .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
-        .StateAfter = D3D12_RESOURCE_STATE_PRESENT
-      }
-    };
-    cmdLists[frameIdx]->ResourceBarrier(1, &swapChainPresentBarrier);
+        .Subresources = {
+          .IndexOrFirstMipLevel = 0,
+          .NumMipLevels = 1,
+          .FirstArraySlice = 0,
+          .NumArraySlices = 1,
+          .FirstPlane = 0,
+          .NumPlanes = 1
+        },
+        .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE
+      };
+      D3D12_BARRIER_GROUP const post_render_barrier_group{
+        .Type = D3D12_BARRIER_TYPE_TEXTURE,
+        .NumBarriers = 1,
+        .pTextureBarriers = &post_render_barrier
+      };
+      cmdLists[frameIdx]->Barrier(1, &post_render_barrier_group);
+    } else {
+#endif
+      D3D12_RESOURCE_BARRIER const swapChainPresentBarrier{
+        .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        .Transition = {
+          .pResource = backBuffers[backBufIdx].Get(),
+          .Subresource = 0,
+          .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
+          .StateAfter = D3D12_RESOURCE_STATE_PRESENT
+        }
+      };
+      cmdLists[frameIdx]->ResourceBarrier(1, &swapChainPresentBarrier);
+#ifndef NO_ENHANCED_BARRIERS
+    }
+#endif
 
     hr = cmdLists[frameIdx]->Close();
     assert(SUCCEEDED(hr));
