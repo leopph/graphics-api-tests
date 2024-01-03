@@ -318,7 +318,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   std::array constexpr red{0.89f, 0.14f, 0.17f, 1.0f};
 
   D3D11_SUBRESOURCE_DATA const texture_init_data{
-    .pSysMem = (multiplane_overlays_support ? green : red).data(),
+    .pSysMem = (windowed_hardware_composition_support ? green : red).data(),
     .SysMemPitch = 128,
     .SysMemSlicePitch = 0
   };
@@ -358,7 +358,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     ConstantBuffer const cbuffer_data{
       .square_color = fullscreen_hardware_composition_support ? green : red,
-      .position_multiplier = windowed_hardware_composition_support ? std::array{1.0f, 1.0f} : std::array{-1.0f, -1.0f}
+      .position_multiplier = multiplane_overlays_support ? std::array{1.0f, 1.0f} : std::array{-1.0f, -1.0f}
     };
 
     std::memcpy(cbuffer_mapped.pData, &cbuffer_data, sizeof cbuffer_data);
