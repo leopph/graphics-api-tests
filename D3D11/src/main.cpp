@@ -200,7 +200,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
       if (UINT support_flags; SUCCEEDED(output6->CheckHardwareCompositionSupport(&support_flags))) {
         fullscreen_hardware_composition_support = (support_flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN) != 0 ? TRUE : FALSE;
-        fullscreen_hardware_composition_support = (support_flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED) != 0 ? TRUE : FALSE;
+        windowed_hardware_composition_support = (support_flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED) != 0 ? TRUE : FALSE;
       }
     }
   }
