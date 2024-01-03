@@ -7,10 +7,13 @@ The Vulkan project is currently WIP.
 
 ## D3D12
 The D3D12 project contains implementations for
-- vertex pulling
-- bindful descriptors
-- bindless descriptors using SM 5.1 dynamic indexing and unbounded arrays
-- bindless descriptors using SM 6.6 dynamic resources
+- different geometry pipeline methods
+  - vertex pushing (using the input assembler)
+  - vertex pulling (reading vertex buffers as shader resources)
+- different resource binding methods
+  - bindful descriptors
+  - bindless descriptors using SM 5.1 dynamic indexing and unbounded arrays
+  - bindless descriptors using SM 6.6 dynamic resources (ResourceDescriptorHeap and SamplerDescriptorHeap)
 - etc.
 
 These can be toggled using macros. See *main.cpp* for more details.

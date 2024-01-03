@@ -1,12 +1,19 @@
 /* D3D12 test project demonstrating
- * - vertex pulling
- * - bindful descriptors
- * - bindless descriptors using SM 5.1 dynamic indexing and unbounded arrays
- * - bindless descriptors using SM 6.6 dynamic resources
+ * - different geometry pipeline methods
+ *   - vertex pushing
+ *   - vertex pulling
+ * - different resource binding methods
+ *   - bindful descriptors
+ *   - bindless descriptors using SM 5.1 dynamic indexing and unbounded arrays
+ *   - bindless descriptors using SM 6.6 dynamic resources
+ * Define NO_VERTEX_PULLING to prevent reading vertex buffers as shader resources
  * Define NO_DYNAMIC_RESOURCES to prevent the use of SM 6.6 dynamic resources even on supported hardware.
  * Define NO_DYNAMIC_INDEXING to prevent the use of SM 5.1 dynamic indexing and unbounded arrays.
  * Define both NO_DYNAMIC_RESOURCES and NO_DYNAMIC_INDEXING to force the use of the traditional bindful approach.
  */
+
+// Uncomment this if you want to opt out of reading vertex buffers as shader resources
+// #define NO_VERTEX_PULLING
 
 // Uncomment this if you want to opt out of using SM 6.6 dynamic resources
 // #define NO_DYNAMIC_RESOURCES
@@ -53,15 +60,19 @@
 #include MAKE_SHADER_INCLUDE_PATH(BindfulVS)
 #endif
 
+#ifdef NO_VERTEX_PULLING
+#include MAKE_SHADER_INCLUDE_PATH(VertexPushVS)
+#endif
+
 
 namespace {
-  auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
-    if (msg == WM_CLOSE) {
-      PostQuitMessage(0);
-      return 0;
-    }
-    return DefWindowProcW(hwnd, msg, wparam, lparam);
+auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, LPARAM const lparam) -> LRESULT {
+  if (msg == WM_CLOSE) {
+    PostQuitMessage(0);
+    return 0;
   }
+  return DefWindowProcW(hwnd, msg, wparam, lparam);
+}
 }
 
 
@@ -323,7 +334,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
         .NumDescriptors = 1,
         .BaseShaderRegister = 0,
         .RegisterSpace = 0,
-        .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE,
         .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
       });
 
@@ -332,7 +343,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
         .NumDescriptors = 1,
         .BaseShaderRegister = 0,
         .RegisterSpace = 1,
-        .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE,
         .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
       });
 
@@ -371,7 +382,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .NumDescriptors = 1,
       .BaseShaderRegister = 0,
       .RegisterSpace = 0,
-      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE,
       .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
     });
 
@@ -380,32 +391,32 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .NumDescriptors = 1,
       .BaseShaderRegister = 1,
       .RegisterSpace = 0,
-      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+      .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE,
       .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
     });
 
     // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
 
     root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
-        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-        .DescriptorTable = {
-          .NumDescriptorRanges = 1,
+      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+      .DescriptorTable = {
+        .NumDescriptorRanges = 1,
         .pDescriptorRanges = &descriptor_ranges[0]
-        },
-        .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
+      },
+      .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
     });
 
     root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
-        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-        .DescriptorTable = {
-          .NumDescriptorRanges = 1,
+      .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+      .DescriptorTable = {
+        .NumDescriptorRanges = 1,
         .pDescriptorRanges = &descriptor_ranges[1]
-        },
-        .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+      },
+      .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
     });
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
-      }
+    }
 #endif
 
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
@@ -432,6 +443,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   {
     D3D12_SHADER_BYTECODE vs_bytecode;
     D3D12_SHADER_BYTECODE ps_bytecode;
+    D3D12_INPUT_LAYOUT_DESC input_layout_desc{nullptr, 0};
 
 #ifndef NO_DYNAMIC_RESOURCES
     if (dynamic_resources_supported) {
@@ -447,13 +459,31 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       vs_bytecode.BytecodeLength = ARRAYSIZE(kDynIdxVSBin);
       vs_bytecode.pShaderBytecode = kDynIdxVSBin;
 #else
-      ps_bytecode.BytecodeLength = ARRAYSIZE(kBindfulPSBin);
-      ps_bytecode.pShaderBytecode = kBindfulPSBin;
-      vs_bytecode.BytecodeLength = ARRAYSIZE(kBindfulVSBin);
-      vs_bytecode.pShaderBytecode = kBindfulVSBin;
+    ps_bytecode.BytecodeLength = ARRAYSIZE(kBindfulPSBin);
+    ps_bytecode.pShaderBytecode = kBindfulPSBin;
+    vs_bytecode.BytecodeLength = ARRAYSIZE(kBindfulVSBin);
+    vs_bytecode.pShaderBytecode = kBindfulVSBin;
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
     }
+#endif
+
+#ifdef NO_VERTEX_PULLING
+    vs_bytecode.BytecodeLength = ARRAYSIZE(kVertexPushVSBin);
+    vs_bytecode.pShaderBytecode = kVertexPushVSBin;
+
+    D3D12_INPUT_ELEMENT_DESC constexpr input_element_desc{
+      .SemanticName = "POSITION",
+      .SemanticIndex = 0,
+      .Format = DXGI_FORMAT_R32G32_FLOAT,
+      .InputSlot = 0,
+      .AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT,
+      .InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+      .InstanceDataStepRate = 0
+    };
+
+    input_layout_desc.NumElements = 1;
+    input_layout_desc.pInputElementDescs = &input_element_desc;
 #endif
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
@@ -516,7 +546,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
           .StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS
         }
       },
-      .InputLayout = {nullptr, 0},
+      .InputLayout = input_layout_desc,
       .IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED,
       .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
       .NumRenderTargets = 1,
@@ -744,6 +774,16 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const resHeapInc{device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)};
   auto const resHeapCpuStart{resHeap->GetCPUDescriptorHandleForHeapStart()};
 
+  auto constexpr vertex_buffer_srv_heap_idx{0};
+  auto constexpr tex_srv_heap_idx{vertex_buffer_srv_heap_idx + 1};
+
+#ifdef NO_VERTEX_PULLING
+  D3D12_VERTEX_BUFFER_VIEW const vertex_buffer_view{
+    .BufferLocation = vertex_buffer->GetGPUVirtualAddress(),
+    .SizeInBytes = static_cast<UINT>(vertex_buffer->GetDesc().Width),
+    .StrideInBytes = sizeof vertices[0]
+  };
+#else
   D3D12_SHADER_RESOURCE_VIEW_DESC constexpr vertBufSrvDesc{
     .Format = DXGI_FORMAT_R32G32_FLOAT,
     .ViewDimension = D3D12_SRV_DIMENSION_BUFFER,
@@ -756,9 +796,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  auto constexpr vertex_buffer_srv_heap_idx{0};
-
   device->CreateShaderResourceView(vertex_buffer.Get(), &vertBufSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + vertex_buffer_srv_heap_idx * resHeapInc});
+#endif
 
   D3D12_SHADER_RESOURCE_VIEW_DESC const texSrvDesc{
     .Format = texDesc.Format,
@@ -768,8 +807,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .MostDetailedMip = 0, .MipLevels = 1, .PlaneSlice = 0, .ResourceMinLODClamp = 0.0f
     }
   };
-
-  auto constexpr tex_srv_heap_idx{vertex_buffer_srv_heap_idx + 1};
 
   device->CreateShaderResourceView(texture.Get(), &texSrvDesc, D3D12_CPU_DESCRIPTOR_HANDLE{resHeapCpuStart.ptr + tex_srv_heap_idx * resHeapInc});
 
@@ -810,11 +847,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     bundle->SetGraphicsRootDescriptorTable(1, resHeap->GetGPUDescriptorHandleForHeapStart());
     bundle->SetGraphicsRootDescriptorTable(2, {resHeap->GetGPUDescriptorHandleForHeapStart().ptr + tex_srv_heap_idx * resHeapInc});
 #else
-    bundle->SetGraphicsRootDescriptorTable(0, resHeap->GetGPUDescriptorHandleForHeapStart());
-    bundle->SetGraphicsRootDescriptorTable(1, {resHeap->GetGPUDescriptorHandleForHeapStart().ptr + tex_srv_heap_idx * resHeapInc});
+  bundle->SetGraphicsRootDescriptorTable(0, resHeap->GetGPUDescriptorHandleForHeapStart());
+  bundle->SetGraphicsRootDescriptorTable(1, {resHeap->GetGPUDescriptorHandleForHeapStart().ptr + tex_srv_heap_idx * resHeapInc});
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
   }
+#endif
+
+#ifdef NO_VERTEX_PULLING
+  bundle->IASetVertexBuffers(0, 1, &vertex_buffer_view);
 #endif
 
   bundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

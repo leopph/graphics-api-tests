@@ -26,6 +26,7 @@
     <FxCompile Include="src\shaders\DynIdxPS.hlsl" />
     <FxCompile Include="src\shaders\BindfulPS.hlsl" />
     <FxCompile Include="src\shaders\BindfulVS.hlsl" />
+    <FxCompile Include="src\shaders\VertexPushVS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\constant_buffer.hlsli" />
