@@ -32,5 +32,6 @@
   <ItemGroup>
     <None Include="src\shaders\constant_buffer.hlsli" />
     <None Include="src\shaders\VertexPushVS.hlsli" />
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>
