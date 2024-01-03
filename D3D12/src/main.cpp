@@ -158,6 +158,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const dynamic_resources_supported{options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >= D3D_SHADER_MODEL_6_6};
 #endif
 
+#ifdef NO_VERTEX_PULLING
+  OutputDebugStringW(L"Using the input assembler.\n");
+#else
+  OutputDebugStringW(L"Using vertex pulling.\n");
+#endif
+
 #ifndef NO_DYNAMIC_RESOURCES
   if (dynamic_resources_supported) {
     OutputDebugStringW(L"Using dynamic resources.\n");
