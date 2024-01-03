@@ -49,19 +49,27 @@
 
 #ifndef NO_DYNAMIC_RESOURCES
 #include MAKE_SHADER_INCLUDE_PATH(DynResPS)
+#ifdef NO_VERTEX_PULLING
+#include MAKE_SHADER_INCLUDE_PATH(VertexPushVS6)
+#else
 #include MAKE_SHADER_INCLUDE_PATH(DynResVS)
+#endif
 #endif
 
 #ifndef NO_DYNAMIC_INDEXING
 #include MAKE_SHADER_INCLUDE_PATH(DynIdxPS)
-#include MAKE_SHADER_INCLUDE_PATH(DynIdxVS)
-#else
-#include MAKE_SHADER_INCLUDE_PATH(BindfulPS)
-#include MAKE_SHADER_INCLUDE_PATH(BindfulVS)
-#endif
-
 #ifdef NO_VERTEX_PULLING
 #include MAKE_SHADER_INCLUDE_PATH(VertexPushVS)
+#else
+#include MAKE_SHADER_INCLUDE_PATH(DynIdxVS)
+#endif
+#else
+#include MAKE_SHADER_INCLUDE_PATH(BindfulPS)
+#ifdef NO_VERTEX_PULLING
+#include MAKE_SHADER_INCLUDE_PATH(VertexPushVS)
+#else
+#include MAKE_SHADER_INCLUDE_PATH(BindfulVS)
+#endif
 #endif
 
 
@@ -356,32 +364,32 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
 
       root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
-          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
-          .Constants = {
-            .ShaderRegister = 0,
-            .RegisterSpace = 0,
-            .Num32BitValues = 2
-          },
-          .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
-        });
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+        .Constants = {
+          .ShaderRegister = 0,
+          .RegisterSpace = 0,
+          .Num32BitValues = 2
+        },
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+      });
 
       root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
-          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-          .DescriptorTable = {
-            .NumDescriptorRanges = 1,
-            .pDescriptorRanges = &descriptor_ranges[0]
-          },
-          .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
-        });
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+        .DescriptorTable = {
+          .NumDescriptorRanges = 1,
+          .pDescriptorRanges = &descriptor_ranges[0]
+        },
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
+      });
 
-        root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
-          .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-          .DescriptorTable = {
-            .NumDescriptorRanges = 1,
-            .pDescriptorRanges = &descriptor_ranges[1]
-          },
-          .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
-        });
+      root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+        .DescriptorTable = {
+          .NumDescriptorRanges = 1,
+          .pDescriptorRanges = &descriptor_ranges[1]
+        },
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+      });
 #else
     descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
       .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
@@ -455,29 +463,41 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     if (dynamic_resources_supported) {
       ps_bytecode.BytecodeLength = ARRAYSIZE(kDynResPSBin);
       ps_bytecode.pShaderBytecode = kDynResPSBin;
+#ifdef NO_VERTEX_PULLING
+      vs_bytecode.BytecodeLength = ARRAYSIZE(kVertexPushVS6Bin);
+      vs_bytecode.pShaderBytecode = kVertexPushVS6Bin;
+#else
       vs_bytecode.BytecodeLength = ARRAYSIZE(kDynResVSBin);
       vs_bytecode.pShaderBytecode = kDynResVSBin;
+#endif
     } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
       ps_bytecode.BytecodeLength = ARRAYSIZE(kDynIdxPSBin);
       ps_bytecode.pShaderBytecode = kDynIdxPSBin;
+#ifdef NO_VERTEX_PULLING
+      vs_bytecode.BytecodeLength = ARRAYSIZE(kVertexPushVSBin);
+      vs_bytecode.pShaderBytecode = kVertexPushVSBin;
+#else
       vs_bytecode.BytecodeLength = ARRAYSIZE(kDynIdxVSBin);
       vs_bytecode.pShaderBytecode = kDynIdxVSBin;
+#endif
 #else
     ps_bytecode.BytecodeLength = ARRAYSIZE(kBindfulPSBin);
     ps_bytecode.pShaderBytecode = kBindfulPSBin;
+#ifdef NO_VERTEX_PULLING
+      vs_bytecode.BytecodeLength = ARRAYSIZE(kVertexPushVSBin);
+      vs_bytecode.pShaderBytecode = kVertexPushVSBin;
+#else
     vs_bytecode.BytecodeLength = ARRAYSIZE(kBindfulVSBin);
     vs_bytecode.pShaderBytecode = kBindfulVSBin;
+#endif
 #endif
 #ifndef NO_DYNAMIC_RESOURCES
     }
 #endif
 
 #ifdef NO_VERTEX_PULLING
-    vs_bytecode.BytecodeLength = ARRAYSIZE(kVertexPushVSBin);
-    vs_bytecode.pShaderBytecode = kVertexPushVSBin;
-
     D3D12_INPUT_ELEMENT_DESC constexpr input_element_desc{
       .SemanticName = "POSITION",
       .SemanticIndex = 0,
@@ -824,7 +844,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     tex_shader_idx = vertex_buffer_shader_idx + 1;
   } else {
 #endif
-  tex_shader_idx = 0;
+    tex_shader_idx = 0;
 #ifndef NO_DYNAMIC_RESOURCES
   }
 #endif

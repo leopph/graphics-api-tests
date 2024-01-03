@@ -146,8 +146,8 @@
       </ObjectFileOutput>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.1</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.1</ShaderModel>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/enable_unbounded_descriptor_tables %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/enable_unbounded_descriptor_tables %(AdditionalOptions)</AdditionalOptions>
+      <EnableUnboundedDescriptorTables Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</EnableUnboundedDescriptorTables>
+      <EnableUnboundedDescriptorTables Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</EnableUnboundedDescriptorTables>
     </FxCompile>
     <FxCompile Include="src\shaders\DynIdxVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
@@ -162,8 +162,8 @@
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(RelativeDir)generated/$(Configuration)/%(Filename).h</HeaderFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       </ObjectFileOutput>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/enable_unbounded_descriptor_tables %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/enable_unbounded_descriptor_tables %(AdditionalOptions)</AdditionalOptions>
+      <EnableUnboundedDescriptorTables Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</EnableUnboundedDescriptorTables>
+      <EnableUnboundedDescriptorTables Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</EnableUnboundedDescriptorTables>
     </FxCompile>
     <FxCompile Include="src\shaders\DynResPS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
@@ -178,7 +178,6 @@
       </ObjectFileOutput>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.6</ShaderModel>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">-Qembed_debug %(AdditionalOptions)</AdditionalOptions>
     </FxCompile>
     <FxCompile Include="src\shaders\DynResVS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
@@ -193,11 +192,25 @@
       </ObjectFileOutput>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.6</ShaderModel>
-      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">-Qembed_debug %(AdditionalOptions)</AdditionalOptions>
+    </FxCompile>
+    <FxCompile Include="src\shaders\VertexPushVS6.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ObjectFileOutput>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </ObjectFileOutput>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.0</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">k%(Filename)Bin</VariableName>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">k%(Filename)Bin</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(RelativeDir)generated/$(Configuration)/%(Filename).h</HeaderFileOutput>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(RelativeDir)generated/$(Configuration)/%(Filename).h</HeaderFileOutput>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\constant_buffer.hlsli" />
+    <None Include="src\shaders\VertexPushVS.hlsli" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

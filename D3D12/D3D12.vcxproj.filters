@@ -27,8 +27,10 @@
     <FxCompile Include="src\shaders\BindfulPS.hlsl" />
     <FxCompile Include="src\shaders\BindfulVS.hlsl" />
     <FxCompile Include="src\shaders\VertexPushVS.hlsl" />
+    <FxCompile Include="src\shaders\VertexPushVS6.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\shaders\constant_buffer.hlsli" />
+    <None Include="src\shaders\VertexPushVS.hlsli" />
   </ItemGroup>
 </Project>
