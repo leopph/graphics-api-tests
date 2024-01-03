@@ -1,17 +1,17 @@
 /* D3D12 test project demonstrating
  * - vertex pulling
- * - classic bindful resources
- * - HLSL 5.1 dynamic resource indexing
- * - SM 6.6 dynamic resources
+ * - bindful descriptors
+ * - bindless descriptors using SM 5.1 dynamic indexing and unbounded arrays
+ * - bindless descriptors using SM 6.6 dynamic resources
  * Define NO_DYNAMIC_RESOURCES to prevent the use of SM 6.6 dynamic resources even on supported hardware.
- * Define NO_DYNAMIC_INDEXING to prevent the use of HLSL 5.1 dynamic resource indexing.
- * Define both NO_DYNAMIC_RESOURCES and NO_DYNAMIC_INDEXING to force the use of the classic bindful approach.
+ * Define NO_DYNAMIC_INDEXING to prevent the use of SM 5.1 dynamic indexing and unbounded arrays.
+ * Define both NO_DYNAMIC_RESOURCES and NO_DYNAMIC_INDEXING to force the use of the traditional bindful approach.
  */
 
 // Uncomment this if you want to opt out of using SM 6.6 dynamic resources
 // #define NO_DYNAMIC_RESOURCES
 
-// Uncomment this if you want to opt out of using HLSL 5.1 dynamic indexing
+// Uncomment this if you want to opt out of using SM 5.1 dynamic indexing and unbounded arrays
 // #define NO_DYNAMIC_INDEXING
 
 #define WIN32_LEAN_AND_MEAN
@@ -70,7 +70,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .lpfnWndProc = &WindowProc,
     .hInstance = hInstance,
     .hCursor = LoadCursorW(nullptr, IDC_ARROW),
-    .lpszClassName = L"D3D12Test"
+    .lpszClassName = L"D3D12 Test"
   };
 
   auto const result{RegisterClassW(&windowClass)};
@@ -81,7 +81,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       DestroyWindow(hwnd);
     }
   })> const hwnd{
-    CreateWindowExW(0, windowClass.lpszClassName, L"D3D12Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+    CreateWindowExW(0, windowClass.lpszClassName, L"D3D12 Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
                     CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr)
   };
 
