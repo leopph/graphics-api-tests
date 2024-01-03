@@ -27,6 +27,7 @@
 #include <limits>
 #include <memory>
 #include <type_traits>
+#include <vector>
 
 #define MAKE_SHADER_INCLUDE_PATH5(x) #x
 #define MAKE_SHADER_INCLUDE_PATH4(x) MAKE_SHADER_INCLUDE_PATH5(x)
@@ -112,7 +113,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(factory.GetAddressOf()));
   assert(SUCCEEDED(hr));
 
-  BOOL tearing_supported{FALSE};
+  auto tearing_supported{FALSE};
   hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing_supported, sizeof tearing_supported);
   assert(SUCCEEDED(hr));
 
@@ -293,11 +294,17 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12RootSignature> root_signature;
 
   {
-    ComPtr<ID3DBlob> root_signature_blob;
+    std::vector<D3D12_DESCRIPTOR_RANGE1> descriptor_ranges;
+    std::vector<D3D12_ROOT_PARAMETER1> root_parameters;
+    auto root_signature_flags{D3D12_ROOT_SIGNATURE_FLAG_NONE};
+
+#ifdef NO_VERTEX_PULLING
+    root_signature_flags |= D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+#endif
 
 #ifndef NO_DYNAMIC_RESOURCES
     if (dynamic_resources_supported) {
-      D3D12_ROOT_PARAMETER1 constexpr root_parameter{
+      root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
         .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
         .Constants = {
           .ShaderRegister = 0,
@@ -305,46 +312,33 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
           .Num32BitValues = 2
         },
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
-      };
+      });
 
-      D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
-        .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
-        .Desc_1_1 = {
-          .NumParameters = 1,
-          .pParameters = &root_parameter,
-          .NumStaticSamplers = 0,
-          .pStaticSamplers = nullptr,
-          .Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
-        }
-      };
-
-      hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
-      assert(SUCCEEDED(hr));
+      root_signature_flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
     } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
-      D3D12_DESCRIPTOR_RANGE1 constexpr vertex_buffer_descriptor_range{
+      descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
         .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
         .NumDescriptors = 1,
         .BaseShaderRegister = 0,
         .RegisterSpace = 0,
         .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
         .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
-      };
+      });
 
-      D3D12_DESCRIPTOR_RANGE1 constexpr texture_descriptor_range{
+      descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
         .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
         .NumDescriptors = 1,
         .BaseShaderRegister = 0,
         .RegisterSpace = 1,
         .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
         .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
-      };
+      });
 
       // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
 
-      std::array const root_parameters{
-        D3D12_ROOT_PARAMETER1{
+      root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
           .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
           .Constants = {
             .ShaderRegister = 0,
@@ -352,77 +346,67 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
             .Num32BitValues = 2
           },
           .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
-        },
-        D3D12_ROOT_PARAMETER1{
+        });
+
+      root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
           .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
           .DescriptorTable = {
             .NumDescriptorRanges = 1,
-            .pDescriptorRanges = &vertex_buffer_descriptor_range
+            .pDescriptorRanges = &descriptor_ranges[0]
           },
           .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
-        },
-        D3D12_ROOT_PARAMETER1{
+        });
+
+        root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
           .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
           .DescriptorTable = {
             .NumDescriptorRanges = 1,
-            .pDescriptorRanges = &texture_descriptor_range
+            .pDescriptorRanges = &descriptor_ranges[1]
           },
           .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
-        }
-      };
-
-      D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
-        .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
-        .Desc_1_1 = {
-          .NumParameters = static_cast<UINT>(root_parameters.size()),
-          .pParameters = root_parameters.data(),
-          .NumStaticSamplers = 0,
-          .pStaticSamplers = nullptr,
-          .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
-        }
-      };
-
-      hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
-      assert(SUCCEEDED(hr));
+        });
 #else
-    D3D12_DESCRIPTOR_RANGE1 constexpr vertex_buffer_descriptor_range{
+    descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
       .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
       .NumDescriptors = 1,
       .BaseShaderRegister = 0,
       .RegisterSpace = 0,
       .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
       .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
-    };
+    });
 
-    D3D12_DESCRIPTOR_RANGE1 constexpr texture_descriptor_range{
+    descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
       .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
       .NumDescriptors = 1,
       .BaseShaderRegister = 1,
       .RegisterSpace = 0,
       .Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
       .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
-    };
+    });
 
     // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
 
-    std::array const root_parameters{
-      D3D12_ROOT_PARAMETER1{
+    root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
         .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
         .DescriptorTable = {
           .NumDescriptorRanges = 1,
-          .pDescriptorRanges = &vertex_buffer_descriptor_range
+        .pDescriptorRanges = &descriptor_ranges[0]
         },
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
-      },
-      D3D12_ROOT_PARAMETER1{
+    });
+
+    root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
         .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
         .DescriptorTable = {
           .NumDescriptorRanges = 1,
-          .pDescriptorRanges = &texture_descriptor_range
+        .pDescriptorRanges = &descriptor_ranges[1]
         },
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
+    });
+#endif
+#ifndef NO_DYNAMIC_RESOURCES
       }
-    };
+#endif
 
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
       .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
@@ -431,16 +415,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
         .pParameters = root_parameters.data(),
         .NumStaticSamplers = 0,
         .pStaticSamplers = nullptr,
-        .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+        .Flags = root_signature_flags
       }
     };
 
+    ComPtr<ID3DBlob> root_signature_blob;
     hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
     assert(SUCCEEDED(hr));
-#endif
-#ifndef NO_DYNAMIC_RESOURCES
-    }
-#endif
 
     hr = device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature));
     assert(SUCCEEDED(hr));
