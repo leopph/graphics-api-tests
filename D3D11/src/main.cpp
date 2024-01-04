@@ -154,6 +154,18 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = tmp_swap_chain.As(&swap_chain);
   assert(SUCCEEDED(hr));
 
+  auto fullscreen_hardware_composition_supported{FALSE};
+  auto windowed_hardware_composition_supported{FALSE};
+
+  if (ComPtr<IDXGIOutput> output; SUCCEEDED(swap_chain->GetContainingOutput(&output))) {
+    if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
+      if (UINT hardware_composition_support{0}; SUCCEEDED(output6->CheckHardwareCompositionSupport(&hardware_composition_support))) {
+        fullscreen_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? TRUE : FALSE;
+        windowed_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? TRUE : FALSE;
+      }
+    }
+  }
+
   auto constexpr max_frames_in_flight{2};
 
 #ifndef NO_WAITABLE_SWAP_CHAIN
@@ -187,23 +199,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D11UnorderedAccessView> back_buffer_uav;
   hr = device->CreateUnorderedAccessView(back_buffer.Get(), &uav_desc, &back_buffer_uav);
   assert(SUCCEEDED(hr));
-
-  auto multiplane_overlays_support{FALSE};
-  auto fullscreen_hardware_composition_support{FALSE};
-  auto windowed_hardware_composition_support{FALSE};
-
-  if (ComPtr<IDXGIOutput> output; SUCCEEDED(swap_chain->GetContainingOutput(&output))) {
-    if (ComPtr<IDXGIOutput2> output2; SUCCEEDED(output.As(&output2))) {
-      multiplane_overlays_support = output2->SupportsOverlays();
-    }
-
-    if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
-      if (UINT support_flags; SUCCEEDED(output6->CheckHardwareCompositionSupport(&support_flags))) {
-        fullscreen_hardware_composition_support = (support_flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN) != 0 ? TRUE : FALSE;
-        windowed_hardware_composition_support = (support_flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED) != 0 ? TRUE : FALSE;
-      }
-    }
-  }
 
   ComPtr<ID3D11VertexShader> vertex_shader;
   hr = device->CreateVertexShader(kvsBin, ARRAYSIZE(kvsBin), nullptr, &vertex_shader);
@@ -316,9 +311,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   std::array constexpr green{0.16f, 0.67f, 0.53f, 1.0f};
   std::array constexpr red{0.89f, 0.14f, 0.17f, 1.0f};
+  std::array constexpr dark_gray{0.1f, 0.1f, 0.1f, 1.0f};
 
   D3D11_SUBRESOURCE_DATA const texture_init_data{
-    .pSysMem = (windowed_hardware_composition_support ? green : red).data(),
+    .pSysMem = (windowed_hardware_composition_supported ? green : red).data(),
     .SysMemPitch = 128,
     .SysMemSlicePitch = 0
   };
@@ -355,10 +351,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = deferred_ctx->Map(cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &cbuffer_mapped);
     assert(SUCCEEDED(hr));
 
-
     ConstantBuffer const cbuffer_data{
-      .square_color = fullscreen_hardware_composition_support ? green : red,
-      .position_multiplier = multiplane_overlays_support ? std::array{1.0f, 1.0f} : std::array{-1.0f, -1.0f}
+      .square_color = fullscreen_hardware_composition_supported ? green : red
     };
 
     std::memcpy(cbuffer_mapped.pData, &cbuffer_data, sizeof cbuffer_data);
@@ -368,7 +362,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     deferred_ctx->CSSetConstantBuffers(CONSTANT_BUFFER_SLOT, 1, cbuffer.GetAddressOf());
     deferred_ctx->CSSetUnorderedAccessViews(0, 1, back_buffer_uav.GetAddressOf(), nullptr);
 
-    deferred_ctx->ClearUnorderedAccessViewFloat(back_buffer_uav.Get(), std::array{0.1f, 0.1f, 0.1f, 1.0f}.data());
+    deferred_ctx->ClearUnorderedAccessViewFloat(back_buffer_uav.Get(), dark_gray.data());
     deferred_ctx->Dispatch(50, 50, 1);
 
     ComPtr<ID3D11CommandList> command_list;
