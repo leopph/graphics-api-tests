@@ -23,7 +23,8 @@ These can be toggled using macros. See *main.cpp* for more details.
 
 ## D3D11
 The D3D11 test implements
-- independent flip true immediate support for windowed swap chains (replacing the classic fullscreen mode)
+- independent flip true immediate support for windowed swap chains (replacing exclusive fullscreen mode)
+- hardware composition support query in fullscreen and windowed scenarios
 - waitable swap chains
 - automatic input layout generation using shader reflection
 - compute shaders
