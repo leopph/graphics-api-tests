@@ -129,18 +129,20 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   swap_chain_flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 #endif
 
+  auto constexpr swap_chain_width{2560};
+  auto constexpr swap_chain_height{1440};
   auto constexpr swap_chain_format{DXGI_FORMAT_R8G8B8A8_UNORM};
   auto constexpr swap_chain_buffer_count{2};
 
   DXGI_SWAP_CHAIN_DESC1 const swap_chain_desc{
-    .Width = 0,
-    .Height = 0,
+    .Width = swap_chain_width,
+    .Height = swap_chain_height,
     .Format = swap_chain_format,
     .Stereo = FALSE,
     .SampleDesc{.Count = 1, .Quality = 0},
     .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_UNORDERED_ACCESS,
     .BufferCount = swap_chain_buffer_count,
-    .Scaling = DXGI_SCALING_NONE,
+    .Scaling = DXGI_SCALING_STRETCH,
     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
     .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
     .Flags = swap_chain_flags
@@ -384,14 +386,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     deferred_ctx->PSSetShader(pixel_shader.Get(), nullptr, 0);
     deferred_ctx->PSSetShaderResources(TEXTURE_SLOT, 1, texture_srv.GetAddressOf());
 
-    RECT client_rect;
-    GetClientRect(hwnd.get(), &client_rect);
-
-    D3D11_VIEWPORT const viewport{
+    D3D11_VIEWPORT constexpr viewport{
       .TopLeftX = 0,
       .TopLeftY = 0,
-      .Width = static_cast<FLOAT>(client_rect.right - client_rect.left),
-      .Height = static_cast<FLOAT>(client_rect.bottom - client_rect.top),
+      .Width = swap_chain_width,
+      .Height = swap_chain_height,
       .MinDepth = 0,
       .MaxDepth = 1
     };
