@@ -21,6 +21,8 @@ The D3D12 project contains implementations for
 
 These can be toggled using macros. See *main.cpp* for more details.
 
+The demo also demonstrates the use of true immediate independent flip in a borderless window.
+
 ## D3D11
 The D3D11 test implements
 - independent flip true immediate support for windowed swap chains (replacing exclusive fullscreen mode)
