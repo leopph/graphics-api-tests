@@ -98,29 +98,11 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
 }
 
 auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance, [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nShowCmd) -> int {
-  WNDCLASSW const window_class{
-    .style = 0,
-    .lpfnWndProc = &WindowProc,
-    .hInstance = hInstance,
-    .hIcon = nullptr,
-    .hCursor = LoadCursorW(nullptr, IDC_ARROW),
-    .lpszClassName = L"D3D12 Test"
-  };
-
-  [[maybe_unused]] auto const atom{RegisterClassW(&window_class)};
-  assert(atom);
-
-  using WindowDeleter = decltype([](HWND const hwnd) {
-    if (hwnd) {
-      DestroyWindow(hwnd);
-    }
-  });
-
-  auto const primary_monitor_screen_width{GetSystemMetrics(SM_CXSCREEN)};
-  auto const primary_monitor_screen_height{GetSystemMetrics(SM_CYSCREEN)};
-
-  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D12 Test", WS_POPUP, 0, 0, primary_monitor_screen_width, primary_monitor_screen_height, nullptr, nullptr, window_class.hInstance, nullptr)};
-  ShowWindow(hwnd.get(), nShowCmd);
+#ifdef NO_VERTEX_PULLING
+  OutputDebugStringW(L"Using the input assembler.\n");
+#else
+  OutputDebugStringW(L"Using vertex pulling.\n");
+#endif
 
   using Microsoft::WRL::ComPtr;
 
@@ -142,13 +124,34 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = CreateDXGIFactory2(factory_create_flags, IID_PPV_ARGS(&factory));
   assert(SUCCEEDED(hr));
 
+  ComPtr<IDXGIAdapter4> high_performance_adapter;
+  hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&high_performance_adapter));
+  assert(SUCCEEDED(hr));
+
+  ComPtr<IDXGIOutput> output;
+  hr = high_performance_adapter->EnumOutputs(0, &output);
+  assert(SUCCEEDED(hr));
+
+  DXGI_OUTPUT_DESC output_desc;
+  hr = output->GetDesc(&output_desc);
+  assert(SUCCEEDED(hr));
+
+  auto const output_width{output_desc.DesktopCoordinates.right - output_desc.DesktopCoordinates.left};
+  auto const output_height{output_desc.DesktopCoordinates.bottom - output_desc.DesktopCoordinates.top};
+
   auto tearing_supported{FALSE};
   hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing_supported, sizeof tearing_supported);
   assert(SUCCEEDED(hr));
 
-  ComPtr<IDXGIAdapter4> high_performance_adapter;
-  hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&high_performance_adapter));
-  assert(SUCCEEDED(hr));
+  auto fullscreen_hardware_composition_supported{FALSE};
+  auto windowed_hardware_composition_supported{FALSE};
+
+  if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
+    if (UINT hardware_composition_support{0}; SUCCEEDED(output6->CheckHardwareCompositionSupport(&hardware_composition_support))) {
+      fullscreen_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? TRUE : FALSE;
+      windowed_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? TRUE : FALSE;
+    }
+  }
 
   ComPtr<ID3D12Device10> device;
   hr = D3D12CreateDevice(high_performance_adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
@@ -176,20 +179,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const dynamic_resources_supported{options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >= D3D_SHADER_MODEL_6_6};
 #endif
 
-#ifndef NO_ENHANCED_BARRIERS
-  D3D12_FEATURE_DATA_D3D12_OPTIONS12 option12;
-  hr = device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &option12, sizeof option12);
-  assert(SUCCEEDED(hr));
-
-  auto const enhanced_barriers_supported{option12.EnhancedBarriersSupported};
-#endif
-
-#ifdef NO_VERTEX_PULLING
-  OutputDebugStringW(L"Using the input assembler.\n");
-#else
-  OutputDebugStringW(L"Using vertex pulling.\n");
-#endif
-
 #ifndef NO_DYNAMIC_RESOURCES
   if (dynamic_resources_supported) {
     OutputDebugStringW(L"Using dynamic resources.\n");
@@ -205,6 +194,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #endif
 
 #ifndef NO_ENHANCED_BARRIERS
+  D3D12_FEATURE_DATA_D3D12_OPTIONS12 option12;
+  hr = device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &option12, sizeof option12);
+  assert(SUCCEEDED(hr));
+
+  auto const enhanced_barriers_supported{option12.EnhancedBarriersSupported};
+#endif
+
+#ifndef NO_ENHANCED_BARRIERS
   if (enhanced_barriers_supported) {
     OutputDebugStringW(L"Using enhanced barriers.\n");
   } else {
@@ -213,6 +210,27 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NO_ENHANCED_BARRIERS
   }
 #endif
+
+  WNDCLASSW const window_class{
+    .style = 0,
+    .lpfnWndProc = &WindowProc,
+    .hInstance = hInstance,
+    .hIcon = nullptr,
+    .hCursor = LoadCursorW(nullptr, IDC_ARROW),
+    .lpszClassName = L"D3D12 Test"
+  };
+
+  [[maybe_unused]] auto const atom{RegisterClassW(&window_class)};
+  assert(atom);
+
+  using WindowDeleter = decltype([](HWND const hwnd) {
+    if (hwnd) {
+      DestroyWindow(hwnd);
+    }
+  });
+
+  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D12 Test", WS_POPUP, output_desc.DesktopCoordinates.left, output_desc.DesktopCoordinates.top, output_width, output_height, nullptr, nullptr, window_class.hInstance, nullptr)};
+  ShowWindow(hwnd.get(), nShowCmd);
 
   D3D12_COMMAND_QUEUE_DESC constexpr direct_command_queue_desc{
     .Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -225,8 +243,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CreateCommandQueue(&direct_command_queue_desc, IID_PPV_ARGS(&direct_command_queue));
   assert(SUCCEEDED(hr));
 
-  auto const swap_chain_width{primary_monitor_screen_width};
-  auto const swap_chain_height{primary_monitor_screen_height};
+  auto const swap_chain_width{output_width};
+  auto const swap_chain_height{output_height};
   constexpr auto swap_chain_format{DXGI_FORMAT_R8G8B8A8_UNORM};
   constexpr auto swap_chain_buffer_count{2};
 
@@ -246,7 +264,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .SampleDesc = {.Count = 1, .Quality = 0},
     .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
     .BufferCount = swap_chain_buffer_count,
-    .Scaling = DXGI_SCALING_NONE,
+    .Scaling = DXGI_SCALING_STRETCH,
     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
     .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
     .Flags = swap_chain_flags
