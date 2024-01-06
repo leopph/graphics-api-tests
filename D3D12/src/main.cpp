@@ -146,8 +146,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing_supported, sizeof tearing_supported);
   assert(SUCCEEDED(hr));
 
+  ComPtr<IDXGIAdapter4> high_performance_adapter;
+  hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&high_performance_adapter));
+  assert(SUCCEEDED(hr));
+
   ComPtr<ID3D12Device10> device;
-  hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
+  hr = D3D12CreateDevice(high_performance_adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
   assert(SUCCEEDED(hr));
 
 #ifndef NDEBUG
