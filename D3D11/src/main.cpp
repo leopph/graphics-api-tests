@@ -48,7 +48,7 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
 }
 
 
-auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance, [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nCmdShow) -> int {
+auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance, [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nShowCmd) -> int {
   WNDCLASSW const window_class{
     .style = 0,
     .lpfnWndProc = &WindowProc,
@@ -67,8 +67,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   });
 
-  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D11 Test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, window_class.hInstance, nullptr)};
-  ShowWindow(hwnd.get(), nCmdShow);
+  auto const primary_monitor_screen_width{GetSystemMetrics(SM_CXSCREEN)};
+  auto const primary_monitor_screen_height{GetSystemMetrics(SM_CYSCREEN)};
+
+  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D11 Test", WS_POPUP, 0, 0, primary_monitor_screen_width, primary_monitor_screen_height, nullptr, nullptr, window_class.hInstance, nullptr)};
+  ShowWindow(hwnd.get(), nShowCmd);
 
   using Microsoft::WRL::ComPtr;
 
@@ -129,14 +132,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   swap_chain_flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 #endif
 
-  auto constexpr swap_chain_width{2560};
-  auto constexpr swap_chain_height{1440};
+  auto const swap_chain_width{primary_monitor_screen_width};
+  auto const swap_chain_height{primary_monitor_screen_height};
   auto constexpr swap_chain_format{DXGI_FORMAT_R8G8B8A8_UNORM};
   auto constexpr swap_chain_buffer_count{2};
 
   DXGI_SWAP_CHAIN_DESC1 const swap_chain_desc{
-    .Width = swap_chain_width,
-    .Height = swap_chain_height,
+    .Width = static_cast<UINT>(swap_chain_width),
+    .Height = static_cast<UINT>(swap_chain_height),
     .Format = swap_chain_format,
     .Stereo = FALSE,
     .SampleDesc{.Count = 1, .Quality = 0},
@@ -386,11 +389,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     deferred_ctx->PSSetShader(pixel_shader.Get(), nullptr, 0);
     deferred_ctx->PSSetShaderResources(TEXTURE_SLOT, 1, texture_srv.GetAddressOf());
 
-    D3D11_VIEWPORT constexpr viewport{
+    D3D11_VIEWPORT const viewport{
       .TopLeftX = 0,
       .TopLeftY = 0,
-      .Width = swap_chain_width,
-      .Height = swap_chain_height,
+      .Width = static_cast<FLOAT>(swap_chain_width),
+      .Height = static_cast<FLOAT>(swap_chain_height),
       .MinDepth = 0,
       .MaxDepth = 1
     };
