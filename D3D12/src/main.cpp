@@ -625,10 +625,6 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pso));
   assert(SUCCEEDED(hr));
 
-  [[maybe_unused]] constexpr std::array<std::uint8_t, 4> red{255, 0, 0, 255};
-  [[maybe_unused]] constexpr std::array<std::uint8_t, 4> green{0, 255, 0, 255};
-  [[maybe_unused]] constexpr std::array<std::uint8_t, 4> blue{0, 0, 255, 255};
-
   D3D12_HEAP_PROPERTIES constexpr upload_heap_properties{
     .Type = D3D12_HEAP_TYPE_UPLOAD,
     .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
@@ -785,6 +781,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   direct_command_queue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{direct_command_lists[0].Get()}.data());
   wait_for_gpu_idle();
 
+  constexpr std::array<std::uint8_t, 4> red_unorm{255, 0, 0, 255};
+  constexpr std::array<std::uint8_t, 4> green_unorm{0, 255, 0, 255};
+
   D3D12_HEAP_PROPERTIES constexpr texture_heap_properties{
     .Type = D3D12_HEAP_TYPE_DEFAULT,
     .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
@@ -826,19 +825,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #endif
   assert(SUCCEEDED(hr));
 
-#ifndef NO_DYNAMIC_RESOURCES
-  if (dynamic_resources_supported) {
-    std::memcpy(mapped_upload_buffer, green.data(), sizeof(green));
-  } else {
-#endif
-#ifndef NO_DYNAMIC_INDEXING
-    std::memcpy(mapped_upload_buffer, blue.data(), sizeof(blue));
-#else
-  std::memcpy(mapped_upload_buffer, red.data(), sizeof(red));
-#endif
-#ifndef NO_DYNAMIC_RESOURCES
-  }
-#endif
+  std::memcpy(mapped_upload_buffer, (windowed_hardware_composition_supported ? green_unorm : red_unorm).data(), 4);
 
   hr = direct_command_lists[0]->Reset(direct_command_allocators[0].Get(), pso.Get());
   assert(SUCCEEDED(hr));
