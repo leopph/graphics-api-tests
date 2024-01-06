@@ -146,8 +146,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing_supported, sizeof tearing_supported);
   assert(SUCCEEDED(hr));
 
-  ComPtr<ID3D12Device9> device;
-  hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&device));
+  ComPtr<ID3D12Device10> device;
+  hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
   assert(SUCCEEDED(hr));
 
 #ifndef NDEBUG
@@ -639,7 +639,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<ID3D12Resource2> upload_buffer;
-  hr = device->CreateCommittedResource2(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, nullptr, IID_PPV_ARGS(&upload_buffer));
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+    hr = device->CreateCommittedResource3(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc, D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(&upload_buffer));
+  } else {
+#endif
+    hr = device->CreateCommittedResource2(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, nullptr, IID_PPV_ARGS(&upload_buffer));
+#ifndef NO_ENHANCED_BARRIERS
+  }
+#endif
   assert(SUCCEEDED(hr));
 
   void* mapped_upload_buffer;
@@ -682,7 +690,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<ID3D12Resource2> vertex_buffer;
-  hr = device->CreateCommittedResource2(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr, nullptr, IID_PPV_ARGS(&vertex_buffer));
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+    hr = device->CreateCommittedResource3(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc, D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(&vertex_buffer));
+  } else {
+#endif
+    hr = device->CreateCommittedResource2(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr, nullptr, IID_PPV_ARGS(&vertex_buffer));
+#ifndef NO_ENHANCED_BARRIERS
+  }
+#endif
   assert(SUCCEEDED(hr));
 
   std::memcpy(mapped_upload_buffer, vertex_data.data(), sizeof(vertex_data));
@@ -692,17 +708,54 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   direct_command_lists[0]->CopyBufferRegion(vertex_buffer.Get(), 0, upload_buffer.Get(), 0, sizeof(vertex_data));
 
-  D3D12_RESOURCE_BARRIER const vertex_buffer_post_upload_barrier{
-    .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-    .Transition = {
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+#ifndef NO_VERTEX_PULLING
+    auto constexpr access_after{D3D12_BARRIER_ACCESS_SHADER_RESOURCE};
+#else
+    auto constexpr access_after{D3D12_BARRIER_ACCESS_VERTEX_BUFFER};
+#endif
+
+    D3D12_BUFFER_BARRIER const vertex_buffer_post_upload_barrier{
+      .SyncBefore = D3D12_BARRIER_SYNC_COPY,
+      .SyncAfter = D3D12_BARRIER_SYNC_VERTEX_SHADING,
+      .AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST,
+      .AccessAfter = access_after,
       .pResource = vertex_buffer.Get(),
-      .Subresource = 0,
-      .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
-      .StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
-    }
-  };
-  direct_command_lists[0]->ResourceBarrier(1, &vertex_buffer_post_upload_barrier);
+      .Offset = 0,
+      .Size = UINT64_MAX
+    };
+
+    D3D12_BARRIER_GROUP const barrier_group{
+      .Type = D3D12_BARRIER_TYPE_BUFFER,
+      .NumBarriers = 1,
+      .pBufferBarriers = &vertex_buffer_post_upload_barrier
+    };
+
+    direct_command_lists[0]->Barrier(1, &barrier_group);
+  } else {
+#endif
+#ifndef NO_VERTEX_PULLING
+    auto constexpr state_after{D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE};
+#else
+    auto constexpr state_after{D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER};
+#endif
+
+    D3D12_RESOURCE_BARRIER const vertex_buffer_post_upload_barrier{
+      .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+      .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+      .Transition = {
+        .pResource = vertex_buffer.Get(),
+        .Subresource = 0,
+        .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+        .StateAfter = state_after
+      }
+    };
+
+    direct_command_lists[0]->ResourceBarrier(1, &vertex_buffer_post_upload_barrier);
+#ifndef NO_ENHANCED_BARRIERS
+  }
+#endif
 
   hr = direct_command_lists[0]->Close();
   assert(SUCCEEDED(hr));
@@ -740,7 +793,15 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<ID3D12Resource2> texture;
-  hr = device->CreateCommittedResource2(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, nullptr, IID_PPV_ARGS(&texture));
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+    hr = device->CreateCommittedResource3(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_BARRIER_LAYOUT_COPY_DEST, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(&texture));
+  } else {
+#endif
+    hr = device->CreateCommittedResource2(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, nullptr, IID_PPV_ARGS(&texture));
+#ifndef NO_ENHANCED_BARRIERS
+  }
+#endif
   assert(SUCCEEDED(hr));
 
 #ifndef NO_DYNAMIC_RESOURCES
@@ -783,18 +844,51 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   direct_command_lists[0]->CopyTextureRegion(&dst_texture_copy_location, 0, 0, 0, &src_texture_copy_location, nullptr);
 
-  D3D12_RESOURCE_BARRIER const texture_post_upload_barrier{
-    .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-    .Transition = {
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+    D3D12_TEXTURE_BARRIER const texture_post_upload_barrier{
+      .SyncBefore = D3D12_BARRIER_SYNC_COPY,
+      .SyncAfter = D3D12_BARRIER_SYNC_PIXEL_SHADING,
+      .AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST,
+      .AccessAfter = D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+      .LayoutBefore = D3D12_BARRIER_LAYOUT_COPY_DEST,
+      .LayoutAfter = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE,
       .pResource = texture.Get(),
-      .Subresource = 0,
-      .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
-      .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-    }
-  };
+      .Subresources = {
+        .IndexOrFirstMipLevel = 0,
+        .NumMipLevels = 1,
+        .FirstArraySlice = 0,
+        .NumArraySlices = 1,
+        .FirstPlane = 0,
+        .NumPlanes = 1
+      },
+      .Flags = D3D12_TEXTURE_BARRIER_FLAG_NONE
+    };
 
-  direct_command_lists[0]->ResourceBarrier(1, &texture_post_upload_barrier);
+    D3D12_BARRIER_GROUP const barrier_group{
+      .Type = D3D12_BARRIER_TYPE_TEXTURE,
+      .NumBarriers = 1,
+      .pTextureBarriers = &texture_post_upload_barrier
+    };
+
+    direct_command_lists[0]->Barrier(1, &barrier_group);
+  } else {
+#endif
+    D3D12_RESOURCE_BARRIER const texture_post_upload_barrier{
+      .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+      .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+      .Transition = {
+        .pResource = texture.Get(),
+        .Subresource = 0,
+        .StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+        .StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+      }
+    };
+
+    direct_command_lists[0]->ResourceBarrier(1, &texture_post_upload_barrier);
+#ifndef NO_ENHANCED_BARRIERS
+  }
+#endif
 
   hr = direct_command_lists[0]->Close();
   assert(SUCCEEDED(hr));
@@ -958,9 +1052,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NO_ENHANCED_BARRIERS
     if (enhanced_barriers_supported) {
       D3D12_TEXTURE_BARRIER const swap_chain_rtv_barrier{
-        .SyncBefore = D3D12_BARRIER_SYNC_ALL,
-        .SyncAfter = D3D12_BARRIER_SYNC_ALL,
-        .AccessBefore = D3D12_BARRIER_ACCESS_COMMON,
+        .SyncBefore = D3D12_BARRIER_SYNC_NONE,
+        .SyncAfter = D3D12_BARRIER_SYNC_RENDER_TARGET,
+        .AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS,
         .AccessAfter = D3D12_BARRIER_ACCESS_RENDER_TARGET,
         .LayoutBefore = D3D12_BARRIER_LAYOUT_PRESENT,
         .LayoutAfter = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
@@ -1006,10 +1100,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NO_ENHANCED_BARRIERS
     if (enhanced_barriers_supported) {
       D3D12_TEXTURE_BARRIER const swap_chain_present_barrier{
-        .SyncBefore = D3D12_BARRIER_SYNC_ALL,
-        .SyncAfter = D3D12_BARRIER_SYNC_ALL,
+        .SyncBefore = D3D12_BARRIER_SYNC_RENDER_TARGET,
+        .SyncAfter = D3D12_BARRIER_SYNC_NONE,
         .AccessBefore = D3D12_BARRIER_ACCESS_RENDER_TARGET,
-        .AccessAfter = D3D12_BARRIER_ACCESS_COMMON,
+        .AccessAfter = D3D12_BARRIER_ACCESS_NO_ACCESS,
         .LayoutBefore = D3D12_BARRIER_LAYOUT_RENDER_TARGET,
         .LayoutAfter = D3D12_BARRIER_LAYOUT_PRESENT,
         .pResource = swap_chain_buffers[back_buffer_idx].Get(),
