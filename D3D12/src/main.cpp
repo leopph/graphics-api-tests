@@ -82,6 +82,8 @@
 #endif
 #endif
 
+#include MAKE_SHADER_INCLUDE_PATH(CS)
+
 extern "C" {
 __declspec(dllexport) extern UINT const D3D12SDKVersion{D3D12_SDK_VERSION};
 __declspec(dllexport) extern char const* D3D12SDKPath{R"(.\D3D12\)"};
@@ -262,7 +264,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .Format = swap_chain_format,
     .Stereo = FALSE,
     .SampleDesc = {.Count = 1, .Quality = 0},
-    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_UNORDERED_ACCESS,
     .BufferCount = swap_chain_buffer_count,
     .Scaling = DXGI_SCALING_STRETCH,
     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
@@ -356,8 +358,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     assert(SUCCEEDED(hr));
   }
 
-  std::vector<D3D12_DESCRIPTOR_RANGE1> descriptor_ranges;
-  std::vector<D3D12_ROOT_PARAMETER1> root_parameters;
+  std::vector<D3D12_DESCRIPTOR_RANGE1> graphics_descriptor_ranges;
+  std::vector<D3D12_ROOT_PARAMETER1> graphics_root_parameters;
   auto root_signature_flags{D3D12_ROOT_SIGNATURE_FLAG_NONE};
 
 #ifdef NO_VERTEX_PULLING
@@ -366,7 +368,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
 #ifndef NO_DYNAMIC_RESOURCES
   if (dynamic_resources_supported) {
-    root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
+    graphics_root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
       .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
       .Constants = {
         .ShaderRegister = 0,
@@ -380,7 +382,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   } else {
 #endif
 #ifndef NO_DYNAMIC_INDEXING
-    descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
+    graphics_descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
       .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
       .NumDescriptors = 1,
       .BaseShaderRegister = 0,
@@ -389,7 +391,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
     });
 
-    descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
+    graphics_descriptor_ranges.emplace_back(D3D12_DESCRIPTOR_RANGE1{
       .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
       .NumDescriptors = 1,
       .BaseShaderRegister = 0,
@@ -400,7 +402,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
     // The tables containing the vertex buffer and the texture must be separate, because the vertex buffer is vertex-shader-only, while the texture is pixel-shader-only, and the tables containing them have to respect that.
 
-    root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
+    graphics_root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
       .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
       .Constants = {
         .ShaderRegister = 0,
@@ -410,20 +412,20 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     });
 
-    root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
+    graphics_root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
       .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
       .DescriptorTable = {
         .NumDescriptorRanges = 1,
-        .pDescriptorRanges = &descriptor_ranges[0]
+        .pDescriptorRanges = &graphics_descriptor_ranges[0]
       },
       .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX
     });
 
-    root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
+    graphics_root_parameters.emplace_back(D3D12_ROOT_PARAMETER1{
       .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
       .DescriptorTable = {
         .NumDescriptorRanges = 1,
-        .pDescriptorRanges = &descriptor_ranges[1]
+        .pDescriptorRanges = &graphics_descriptor_ranges[1]
       },
       .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
     });
@@ -470,23 +472,52 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   }
 #endif
 
-  D3D12_VERSIONED_ROOT_SIGNATURE_DESC const root_signature_desc{
+  D3D12_VERSIONED_ROOT_SIGNATURE_DESC const graphics_root_signature_desc{
     .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
     .Desc_1_1 = {
-      .NumParameters = static_cast<UINT>(root_parameters.size()),
-      .pParameters = root_parameters.data(),
+      .NumParameters = static_cast<UINT>(graphics_root_parameters.size()),
+      .pParameters = graphics_root_parameters.data(),
       .NumStaticSamplers = 0,
       .pStaticSamplers = nullptr,
       .Flags = root_signature_flags
     }
   };
 
-  ComPtr<ID3DBlob> root_signature_blob;
-  hr = D3D12SerializeVersionedRootSignature(&root_signature_desc, &root_signature_blob, nullptr);
+  ComPtr<ID3DBlob> graphics_root_signature_blob;
+  hr = D3D12SerializeVersionedRootSignature(&graphics_root_signature_desc, &graphics_root_signature_blob, nullptr);
   assert(SUCCEEDED(hr));
 
-  ComPtr<ID3D12RootSignature> root_signature;
-  hr = device->CreateRootSignature(0, root_signature_blob->GetBufferPointer(), root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature));
+  ComPtr<ID3D12RootSignature> graphics_root_signature;
+  hr = device->CreateRootSignature(0, graphics_root_signature_blob->GetBufferPointer(), graphics_root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&graphics_root_signature));
+  assert(SUCCEEDED(hr));
+
+  D3D12_ROOT_PARAMETER1 constexpr compute_root_parameter{
+    .ParameterType = D3D12_ROOT_PARAMETER_TYPE_UAV,
+    .Descriptor = {
+      .ShaderRegister = 0,
+      .RegisterSpace = 0,
+      .Flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE
+    },
+    .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+  };
+
+  D3D12_VERSIONED_ROOT_SIGNATURE_DESC const compute_root_signature_desc{
+    .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+    .Desc_1_1 = {
+      .NumParameters = 1,
+      .pParameters = &compute_root_parameter,
+      .NumStaticSamplers = 0,
+      .pStaticSamplers = nullptr,
+      .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+    }
+  };
+
+  ComPtr<ID3DBlob> compute_root_signature_blob;
+  hr = D3D12SerializeVersionedRootSignature(&compute_root_signature_desc, &compute_root_signature_blob, nullptr);
+  assert(SUCCEEDED(hr));
+
+  ComPtr<ID3D12RootSignature> compute_root_signature;
+  hr = device->CreateRootSignature(0, compute_root_signature_blob->GetBufferPointer(), compute_root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&compute_root_signature));
   assert(SUCCEEDED(hr));
 
   D3D12_SHADER_BYTECODE vs_bytecode;
@@ -546,8 +577,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   input_layout_desc.pInputElementDescs = &input_element_desc;
 #endif
 
-  D3D12_GRAPHICS_PIPELINE_STATE_DESC const pso_desc{
-    .pRootSignature = root_signature.Get(),
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC const graphics_pso_desc{
+    .pRootSignature = graphics_root_signature.Get(),
     .VS = vs_bytecode,
     .PS = ps_bytecode,
     .DS = {nullptr, 0},
@@ -621,8 +652,20 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
   };
 
-  ComPtr<ID3D12PipelineState> pso;
-  hr = device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&pso));
+  ComPtr<ID3D12PipelineState> graphics_pso;
+  hr = device->CreateGraphicsPipelineState(&graphics_pso_desc, IID_PPV_ARGS(&graphics_pso));
+  assert(SUCCEEDED(hr));
+
+  D3D12_COMPUTE_PIPELINE_STATE_DESC const compute_pso_desc{
+    .pRootSignature = graphics_root_signature.Get(),
+    .CS = {kCSBin, ARRAYSIZE(kCSBin)},
+    .NodeMask = 0,
+    .CachedPSO = {nullptr, 0},
+    .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
+  };
+
+  ComPtr<ID3D12PipelineState> compute_pso;
+  hr = device->CreateComputePipelineState(&compute_pso_desc, IID_PPV_ARGS(&compute_pso));
   assert(SUCCEEDED(hr));
 
   D3D12_HEAP_PROPERTIES constexpr upload_heap_properties{
@@ -721,7 +764,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   std::memcpy(mapped_upload_buffer, vertex_data.data(), sizeof(vertex_data));
 
-  hr = direct_command_lists[0]->Reset(direct_command_allocators[0].Get(), pso.Get());
+  hr = direct_command_lists[0]->Reset(direct_command_allocators[0].Get(), graphics_pso.Get());
   assert(SUCCEEDED(hr));
 
   direct_command_lists[0]->CopyBufferRegion(vertex_buffer.Get(), 0, upload_buffer.Get(), 0, sizeof(vertex_data));
@@ -827,7 +870,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   std::memcpy(mapped_upload_buffer, (windowed_hardware_composition_supported ? green_unorm : red_unorm).data(), 4);
 
-  hr = direct_command_lists[0]->Reset(direct_command_allocators[0].Get(), pso.Get());
+  hr = direct_command_lists[0]->Reset(direct_command_allocators[0].Get(), graphics_pso.Get());
   assert(SUCCEEDED(hr));
 
   D3D12_TEXTURE_COPY_LOCATION const src_texture_copy_location{
@@ -976,11 +1019,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D12GraphicsCommandList6> bundle;
-  hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundle_allocator.Get(), pso.Get(), IID_PPV_ARGS(&bundle));
+  hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundle_allocator.Get(), graphics_pso.Get(), IID_PPV_ARGS(&bundle));
   assert(SUCCEEDED(hr));
 
   bundle->SetDescriptorHeaps(1, resource_heap.GetAddressOf());
-  bundle->SetGraphicsRootSignature(root_signature.Get());
+  bundle->SetGraphicsRootSignature(graphics_root_signature.Get());
 
 #if !defined(NO_DYNAMIC_RESOURCES) || !defined(NO_DYNAMIC_INDEXING)
   std::array const root_constants{vertex_buffer_shader_idx, tex_shader_idx};
@@ -1033,7 +1076,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = direct_command_allocators[frame_idx]->Reset();
     assert(SUCCEEDED(hr));
 
-    hr = direct_command_lists[frame_idx]->Reset(direct_command_allocators[frame_idx].Get(), pso.Get());
+    hr = direct_command_lists[frame_idx]->Reset(direct_command_allocators[frame_idx].Get(), graphics_pso.Get());
     assert(SUCCEEDED(hr));
 
     direct_command_lists[frame_idx]->SetDescriptorHeaps(1, resource_heap.GetAddressOf());
@@ -1148,6 +1191,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NO_ENHANCED_BARRIERS
     }
 #endif
+
+    direct_command_lists[frame_idx]->SetPipelineState(compute_pso.Get());
+    direct_command_lists[frame_idx]->SetComputeRootSignature(compute_root_signature.Get());
+    direct_command_lists[frame_idx]->Dispatch(10, 10, 1);
 
     hr = direct_command_lists[frame_idx]->Close();
     assert(SUCCEEDED(hr));
