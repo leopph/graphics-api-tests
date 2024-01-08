@@ -99,7 +99,8 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
 }
 }
 
-auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance, [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nShowCmd) -> int {
+auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance,
+                     [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nShowCmd) -> int {
 #ifdef NO_VERTEX_PULLING
   OutputDebugStringW(L"Using the input assembler.\n");
 #else
@@ -127,7 +128,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   ComPtr<IDXGIAdapter4> high_performance_adapter;
-  hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&high_performance_adapter));
+  hr = factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                                           IID_PPV_ARGS(&high_performance_adapter));
   assert(SUCCEEDED(hr));
 
   ComPtr<IDXGIOutput> output;
@@ -149,9 +151,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto windowed_hardware_composition_supported{FALSE};
 
   if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
-    if (UINT hardware_composition_support{0}; SUCCEEDED(output6->CheckHardwareCompositionSupport(&hardware_composition_support))) {
-      fullscreen_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? TRUE : FALSE;
-      windowed_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? TRUE : FALSE;
+    if (UINT hardware_composition_support{0}; SUCCEEDED(
+      output6->CheckHardwareCompositionSupport(&hardware_composition_support))) {
+      fullscreen_hardware_composition_supported = hardware_composition_support &
+                                                  DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN
+                                                    ? TRUE
+                                                    : FALSE;
+      windowed_hardware_composition_supported =
+        hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? TRUE : FALSE;
     }
   }
 
@@ -178,7 +185,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   hr = device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shader_model, sizeof shader_model);
   assert(SUCCEEDED(hr));
 
-  auto const dynamic_resources_supported{options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >= D3D_SHADER_MODEL_6_6};
+  auto const dynamic_resources_supported{
+    options.ResourceBindingTier == D3D12_RESOURCE_BINDING_TIER_3 && shader_model.HighestShaderModel >=
+    D3D_SHADER_MODEL_6_6
+  };
 #endif
 
 #ifndef NO_DYNAMIC_RESOURCES
@@ -231,7 +241,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   });
 
-  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D12 Test", WS_POPUP, output_desc.DesktopCoordinates.left, output_desc.DesktopCoordinates.top, output_width, output_height, nullptr, nullptr, window_class.hInstance, nullptr)};
+  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{
+    CreateWindowExW(0, window_class.lpszClassName, L"D3D12 Test", WS_POPUP, output_desc.DesktopCoordinates.left,
+                    output_desc.DesktopCoordinates.top, output_width, output_height, nullptr, nullptr,
+                    window_class.hInstance, nullptr)
+  };
   ShowWindow(hwnd.get(), nShowCmd);
 
   D3D12_COMMAND_QUEUE_DESC constexpr direct_command_queue_desc{
@@ -264,7 +278,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     .Format = swap_chain_format,
     .Stereo = FALSE,
     .SampleDesc = {.Count = 1, .Quality = 0},
-    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_UNORDERED_ACCESS,
+    .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
     .BufferCount = swap_chain_buffer_count,
     .Scaling = DXGI_SCALING_STRETCH,
     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
@@ -273,7 +287,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   };
 
   ComPtr<IDXGISwapChain1> swap_chain1;
-  hr = factory->CreateSwapChainForHwnd(direct_command_queue.Get(), hwnd.get(), &swap_chain_desc, nullptr, nullptr, &swap_chain1);
+  hr = factory->CreateSwapChainForHwnd(direct_command_queue.Get(), hwnd.get(), &swap_chain_desc, nullptr, nullptr,
+                                       &swap_chain1);
   assert(SUCCEEDED(hr));
 
   ComPtr<IDXGISwapChain4> swap_chain;
@@ -354,7 +369,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&direct_command_allocators[i]));
     assert(SUCCEEDED(hr));
 
-    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&direct_command_lists[i]));
+    hr = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
+                                    IID_PPV_ARGS(&direct_command_lists[i]));
     assert(SUCCEEDED(hr));
   }
 
@@ -488,7 +504,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D12RootSignature> graphics_root_signature;
-  hr = device->CreateRootSignature(0, graphics_root_signature_blob->GetBufferPointer(), graphics_root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&graphics_root_signature));
+  hr = device->CreateRootSignature(0, graphics_root_signature_blob->GetBufferPointer(),
+                                   graphics_root_signature_blob->GetBufferSize(),
+                                   IID_PPV_ARGS(&graphics_root_signature));
   assert(SUCCEEDED(hr));
 
   D3D12_ROOT_PARAMETER1 constexpr compute_root_parameter{
@@ -517,7 +535,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D12RootSignature> compute_root_signature;
-  hr = device->CreateRootSignature(0, compute_root_signature_blob->GetBufferPointer(), compute_root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&compute_root_signature));
+  hr = device->CreateRootSignature(0, compute_root_signature_blob->GetBufferPointer(),
+                                   compute_root_signature_blob->GetBufferSize(), IID_PPV_ARGS(&compute_root_signature));
   assert(SUCCEEDED(hr));
 
   D3D12_SHADER_BYTECODE vs_bytecode;
@@ -657,7 +676,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   D3D12_COMPUTE_PIPELINE_STATE_DESC const compute_pso_desc{
-    .pRootSignature = graphics_root_signature.Get(),
+    .pRootSignature = compute_root_signature.Get(),
     .CS = {kCSBin, ARRAYSIZE(kCSBin)},
     .NodeMask = 0,
     .CachedPSO = {nullptr, 0},
@@ -702,10 +721,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12Resource2> upload_buffer;
 #ifndef NO_ENHANCED_BARRIERS
   if (enhanced_barriers_supported) {
-    hr = device->CreateCommittedResource3(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc, D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(&upload_buffer));
+    hr = device->CreateCommittedResource3(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc,
+                                          D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr,
+                                          IID_PPV_ARGS(&upload_buffer));
   } else {
 #endif
-    hr = device->CreateCommittedResource2(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, nullptr, IID_PPV_ARGS(&upload_buffer));
+    hr = device->CreateCommittedResource2(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_buffer_desc,
+                                          D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, nullptr,
+                                          IID_PPV_ARGS(&upload_buffer));
 #ifndef NO_ENHANCED_BARRIERS
   }
 #endif
@@ -753,10 +776,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12Resource2> vertex_buffer;
 #ifndef NO_ENHANCED_BARRIERS
   if (enhanced_barriers_supported) {
-    hr = device->CreateCommittedResource3(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc, D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(&vertex_buffer));
+    hr = device->CreateCommittedResource3(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc,
+                                          D3D12_BARRIER_LAYOUT_UNDEFINED, nullptr, nullptr, 0, nullptr,
+                                          IID_PPV_ARGS(&vertex_buffer));
   } else {
 #endif
-    hr = device->CreateCommittedResource2(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr, nullptr, IID_PPV_ARGS(&vertex_buffer));
+    hr = device->CreateCommittedResource2(&vertex_buffer_heap_properties, D3D12_HEAP_FLAG_NONE, &vertex_buffer_desc,
+                                          D3D12_RESOURCE_STATE_COMMON, nullptr, nullptr, IID_PPV_ARGS(&vertex_buffer));
 #ifndef NO_ENHANCED_BARRIERS
   }
 #endif
@@ -859,10 +885,13 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   ComPtr<ID3D12Resource2> texture;
 #ifndef NO_ENHANCED_BARRIERS
   if (enhanced_barriers_supported) {
-    hr = device->CreateCommittedResource3(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_BARRIER_LAYOUT_COPY_DEST, nullptr, nullptr, 0, nullptr, IID_PPV_ARGS(&texture));
+    hr = device->CreateCommittedResource3(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc,
+                                          D3D12_BARRIER_LAYOUT_COPY_DEST, nullptr, nullptr, 0, nullptr,
+                                          IID_PPV_ARGS(&texture));
   } else {
 #endif
-    hr = device->CreateCommittedResource2(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, nullptr, IID_PPV_ARGS(&texture));
+    hr = device->CreateCommittedResource2(&texture_heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc,
+                                          D3D12_RESOURCE_STATE_COPY_DEST, nullptr, nullptr, IID_PPV_ARGS(&texture));
 #ifndef NO_ENHANCED_BARRIERS
   }
 #endif
@@ -948,6 +977,52 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   direct_command_queue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{direct_command_lists[0].Get()}.data());
   wait_for_gpu_idle();
 
+  D3D12_HEAP_PROPERTIES constexpr compute_texture_heap_properties{
+    .Type = D3D12_HEAP_TYPE_DEFAULT,
+    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
+    .CreationNodeMask = 0,
+    .VisibleNodeMask = 0
+  };
+
+  D3D12_RESOURCE_DESC1 const compute_texture_desc{
+    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    .Alignment = 0,
+    .Width = static_cast<UINT64>(swap_chain_width),
+    .Height = static_cast<UINT>(swap_chain_height),
+    .DepthOrArraySize = 1,
+    .MipLevels = 1,
+    .Format = swap_chain_format,
+    .SampleDesc = {
+      .Count = 1,
+      .Quality = 0
+    },
+    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    .Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+    .SamplerFeedbackMipRegion = {
+      .Width = 0,
+      .Height = 0,
+      .Depth = 0
+    }
+  };
+
+  ComPtr<ID3D12Resource2> compute_texture;
+#ifndef NO_ENHANCED_BARRIERS
+  if (enhanced_barriers_supported) {
+    hr = device->CreateCommittedResource3(&compute_texture_heap_properties, D3D12_HEAP_FLAG_NONE, &compute_texture_desc,
+                                          D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_UNORDERED_ACCESS, nullptr, nullptr, 0,
+                                          nullptr,
+                                          IID_PPV_ARGS(&compute_texture));
+  } else {
+#endif
+    hr = device->CreateCommittedResource2(&compute_texture_heap_properties, D3D12_HEAP_FLAG_NONE, &compute_texture_desc,
+                                          D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, nullptr,
+                                          IID_PPV_ARGS(&compute_texture));
+#ifndef NO_ENHANCED_BARRIERS
+  }
+#endif
+  assert(SUCCEEDED(hr));
+
   D3D12_DESCRIPTOR_HEAP_DESC constexpr resource_heap_desc{
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
     .NumDescriptors = 2,
@@ -984,7 +1059,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  device->CreateShaderResourceView(vertex_buffer.Get(), &vertex_buffer_srv_desc, D3D12_CPU_DESCRIPTOR_HANDLE{resource_heap_cpu_start.ptr + static_cast<SIZE_T>(vertex_buffer_srv_heap_idx) * resource_heap_increment});
+  device->CreateShaderResourceView(vertex_buffer.Get(), &vertex_buffer_srv_desc, D3D12_CPU_DESCRIPTOR_HANDLE{
+                                     resource_heap_cpu_start.ptr + static_cast<SIZE_T>(vertex_buffer_srv_heap_idx) *
+                                     resource_heap_increment
+                                   });
 #endif
 
   D3D12_SHADER_RESOURCE_VIEW_DESC constexpr texture_srv_desc{
@@ -999,7 +1077,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
   };
 
-  device->CreateShaderResourceView(texture.Get(), &texture_srv_desc, D3D12_CPU_DESCRIPTOR_HANDLE{resource_heap_cpu_start.ptr + static_cast<SIZE_T>(tex_srv_heap_idx) * resource_heap_increment});
+  device->CreateShaderResourceView(texture.Get(), &texture_srv_desc, D3D12_CPU_DESCRIPTOR_HANDLE{
+                                     resource_heap_cpu_start.ptr + static_cast<SIZE_T>(tex_srv_heap_idx) *
+                                     resource_heap_increment
+                                   });
 
   UINT constexpr vertex_buffer_shader_idx{0};
   UINT tex_shader_idx;
@@ -1019,7 +1100,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   ComPtr<ID3D12GraphicsCommandList6> bundle;
-  hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundle_allocator.Get(), graphics_pso.Get(), IID_PPV_ARGS(&bundle));
+  hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, bundle_allocator.Get(), graphics_pso.Get(),
+                                 IID_PPV_ARGS(&bundle));
   assert(SUCCEEDED(hr));
 
   bundle->SetDescriptorHeaps(1, resource_heap.GetAddressOf());
@@ -1037,7 +1119,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 #ifndef NO_DYNAMIC_INDEXING
     bundle->SetGraphicsRoot32BitConstants(0, static_cast<UINT>(root_constants.size()), root_constants.data(), 0);
     bundle->SetGraphicsRootDescriptorTable(1, resource_heap->GetGPUDescriptorHandleForHeapStart());
-    bundle->SetGraphicsRootDescriptorTable(2, {resource_heap->GetGPUDescriptorHandleForHeapStart().ptr + static_cast<SIZE_T>(tex_srv_heap_idx) * resource_heap_increment});
+    bundle->SetGraphicsRootDescriptorTable(2, {
+                                             resource_heap->GetGPUDescriptorHandleForHeapStart().ptr + static_cast<
+                                               SIZE_T>(tex_srv_heap_idx) * resource_heap_increment
+                                           });
 #else
   bundle->SetGraphicsRootDescriptorTable(0, resource_heap->GetGPUDescriptorHandleForHeapStart());
   bundle->SetGraphicsRootDescriptorTable(1, {resource_heap->GetGPUDescriptorHandleForHeapStart().ptr + static_cast<SIZE_T>(tex_srv_heap_idx) * resource_heap_increment});
@@ -1144,7 +1229,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     }
 #endif
 
-    direct_command_lists[frame_idx]->ClearRenderTargetView(swap_chain_rtvs[back_buffer_idx], std::array{0.1f, 0.1f, 0.1f, 1.0f}.data(), 0, nullptr);
+    direct_command_lists[frame_idx]->ClearRenderTargetView(swap_chain_rtvs[back_buffer_idx],
+                                                           std::array{0.1f, 0.1f, 0.1f, 1.0f}.data(), 0, nullptr);
     direct_command_lists[frame_idx]->OMSetRenderTargets(1, &swap_chain_rtvs[back_buffer_idx], FALSE, nullptr);
 
     direct_command_lists[frame_idx]->ExecuteBundle(bundle.Get());
@@ -1196,10 +1282,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     direct_command_lists[frame_idx]->SetComputeRootSignature(compute_root_signature.Get());
     direct_command_lists[frame_idx]->Dispatch(10, 10, 1);
 
+    direct_command_lists[frame_idx]->CopyResource(swap_chain_buffers[back_buffer_idx].Get(), compute_texture.Get());
+
     hr = direct_command_lists[frame_idx]->Close();
     assert(SUCCEEDED(hr));
 
-    direct_command_queue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{direct_command_lists[frame_idx].Get()}.data());
+    direct_command_queue->ExecuteCommandLists(1, std::array<ID3D12CommandList*, 1>{
+                                                direct_command_lists[frame_idx].Get()
+                                              }.data());
 
     hr = swap_chain->Present(0, present_flags);
     assert(SUCCEEDED(hr));
