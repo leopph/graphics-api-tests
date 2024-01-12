@@ -4,8 +4,11 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include <stb/stb_image.h>
+
+#include <tinyobjloader/tiny_obj_loader.h>
 
 #include <algorithm>
 #include <array>
@@ -14,12 +17,16 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <optional>
 #include <set>
 #include <span>
+#include <string>
+#include <string_view>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 #include "shaders/generated/vertex.h"
@@ -63,6 +70,17 @@ struct Vertex {
   }
 };
 
+[[nodiscard]] auto operator==(Vertex const& lhs, Vertex const& rhs) -> bool {
+  return lhs.pos == rhs.pos && lhs.color == rhs.color && lhs.uv == rhs.uv;
+}
+
+template <>
+struct std::hash<Vertex> {
+  [[nodiscard]] auto operator()(Vertex const& vertex) const noexcept -> std::size_t {
+    return ((hash<glm::vec3>{}(vertex.pos) ^ (hash<glm::vec3>{}(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>{}(vertex.uv) << 1);
+  }
+};
+
 namespace {
 std::uint32_t constexpr kWidth{800};
 std::uint32_t constexpr kHeight{600};
@@ -80,21 +98,8 @@ std::vector const kDeviceExtensions{
   VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 auto constexpr kMaxFramesInFlight{2};
-std::vector const kVertices{
-  Vertex{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-  Vertex{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-  Vertex{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-  Vertex{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-  Vertex{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-  Vertex{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-  Vertex{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-  Vertex{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-};
-std::vector<std::uint16_t> const kIndices{
-  0, 1, 2, 2, 3, 0,
-  4, 5, 6, 6, 7, 4
-};
+std::string_view constexpr kModelPath{"models/viking_room.obj"};
+std::string_view constexpr kTexturePath{"textures/viking_room.png"};
 
 VKAPI_ATTR auto VKAPI_CALL DebugCallback(
   [[maybe_unused]] VkDebugUtilsMessageSeverityFlagBitsEXT const severity,
@@ -1221,7 +1226,7 @@ private:
     int width;
     int height;
     int channel_count;
-    auto const pixel_data{stbi_load("textures/texture.jpg", &width, &height, &channel_count, STBI_rgb_alpha)};
+    auto const pixel_data{stbi_load(kTexturePath.data(), &width, &height, &channel_count, STBI_rgb_alpha)};
 
     if (!pixel_data) {
       throw std::runtime_error{"Failed to load texture image."};
@@ -1294,6 +1299,46 @@ private:
     }
   }
 
+  auto LoadModel() -> void {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn;
+    std::string err;
+
+    if (!LoadObj(&attrib, &shapes, &materials, &warn, &err, kModelPath.data())) {
+      throw std::runtime_error{warn + err};
+    }
+
+    std::unordered_map<Vertex, std::uint32_t> unique_vertices;
+
+    for (auto const& [name, mesh, lines, points] : shapes) {
+      for (auto const& [vertex_index, normal_index, texcoord_index] : mesh.indices) {
+        Vertex vertex;
+
+        vertex.pos = {
+          attrib.vertices[3 * vertex_index + 0],
+          attrib.vertices[3 * vertex_index + 1],
+          attrib.vertices[3 * vertex_index + 2],
+        };
+
+        vertex.uv = {
+          attrib.texcoords[2 * texcoord_index + 0],
+          1.0f - attrib.texcoords[2 * texcoord_index + 1],
+        };
+
+        vertex.color = {1.0f, 1.0f, 1.0f};
+
+        if (!unique_vertices.contains(vertex)) {
+          unique_vertices[vertex] = static_cast<std::uint32_t>(vertices_.size());
+          vertices_.emplace_back(vertex);
+        }
+
+        indices_.emplace_back(unique_vertices[vertex]);
+      }
+    }
+  }
+
   [[nodiscard]] auto FindMemoryType(std::uint32_t const type_filter,
                                     VkMemoryPropertyFlags const properties) const -> std::uint32_t {
     VkPhysicalDeviceMemoryProperties memory_properties;
@@ -1359,7 +1404,7 @@ private:
   }
 
   auto CreateVertexBuffer() -> void {
-    VkDeviceSize const buffer_size{sizeof(kVertices[0]) * kVertices.size()};
+    VkDeviceSize const buffer_size{sizeof(vertices_[0]) * vertices_.size()};
 
     VkBuffer staging_buffer;
     VkDeviceMemory staging_buffer_memory;
@@ -1373,7 +1418,7 @@ private:
       throw std::runtime_error{"Failed to map staging buffer memory for vertex upload."};
     }
 
-    std::memcpy(data, kVertices.data(), buffer_size);
+    std::memcpy(data, vertices_.data(), buffer_size);
 
     vkUnmapMemory(device_, staging_buffer_memory);
 
@@ -1386,7 +1431,7 @@ private:
   }
 
   auto CreateIndexBuffer() -> void {
-    VkDeviceSize const buffer_size{sizeof(kIndices[0]) * kIndices.size()};
+    VkDeviceSize const buffer_size{sizeof(indices_[0]) * indices_.size()};
 
     VkBuffer staging_buffer;
     VkDeviceMemory staging_buffer_memory;
@@ -1399,7 +1444,7 @@ private:
       throw std::runtime_error{"Failed to map staging buffer memory for index upload."};
     }
 
-    std::memcpy(data, kIndices.data(), buffer_size);
+    std::memcpy(data, indices_.data(), buffer_size);
 
     vkUnmapMemory(device_, staging_buffer_memory);
 
@@ -1578,6 +1623,7 @@ private:
     CreateTextureImage();
     CreateTextureImageView();
     CreateTextureSampler();
+    LoadModel();
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateUniformBuffers();
@@ -1623,7 +1669,7 @@ private:
     std::array const vertex_buffers{vertex_buffer_};
     std::array constexpr offsets{static_cast<VkDeviceSize>(0)};
     vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers.data(), offsets.data());
-    vkCmdBindIndexBuffer(command_buffer, index_buffer_, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindIndexBuffer(command_buffer, index_buffer_, 0, VK_INDEX_TYPE_UINT32);
 
     VkViewport const viewport{
       .x = 0,
@@ -1643,7 +1689,7 @@ private:
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 0, 1,
                             &descriptor_sets_[current_frame_], 0, nullptr);
-    vkCmdDrawIndexed(command_buffer, static_cast<std::uint32_t>(kIndices.size()), 1, 0, 0, 0);
+    vkCmdDrawIndexed(command_buffer, static_cast<std::uint32_t>(indices_.size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(command_buffer);
 
     if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
@@ -1838,6 +1884,9 @@ private:
   VkDeviceMemory texture_image_memory_{VK_NULL_HANDLE};
   VkImageView texture_image_view_{VK_NULL_HANDLE};
   VkSampler texture_sampler_{VK_NULL_HANDLE};
+
+  std::vector<Vertex> vertices_;
+  std::vector<std::uint32_t> indices_;
 
   VkBuffer vertex_buffer_{VK_NULL_HANDLE};
   VkDeviceMemory vertex_buffer_memory_{VK_NULL_HANDLE};
