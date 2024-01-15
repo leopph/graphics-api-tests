@@ -422,8 +422,11 @@ public:
         vk::ShaderStageFlagBits::eVertex
       },
       vk::DescriptorSetLayoutBinding{
-        1, vk::DescriptorType::eCombinedImageSampler, 1,
+        1, vk::DescriptorType::eSampledImage, 1,
         vk::ShaderStageFlagBits::eFragment
+      },
+      vk::DescriptorSetLayoutBinding{
+        2, vk::DescriptorType::eSampler, 1, vk::ShaderStageFlagBits::eFragment
       }
     };
 
@@ -639,9 +642,13 @@ public:
         static_cast<std::uint32_t>(max_frames_in_flight_)
       },
       vk::DescriptorPoolSize{
-        vk::DescriptorType::eCombinedImageSampler,
+        vk::DescriptorType::eSampledImage,
         static_cast<std::uint32_t>(max_frames_in_flight_)
       },
+      vk::DescriptorPoolSize{
+        vk::DescriptorType::eSampler,
+        static_cast<std::uint32_t>(max_frames_in_flight_)
+      }
     };
 
     descriptor_pool_ = device_.createDescriptorPool(
@@ -662,9 +669,10 @@ public:
         uniform_buffers_[i], 0, sizeof(UniformBufferObject)
       };
       vk::DescriptorImageInfo const image_info{
-        texture_sampler_, texture_image_view_,
+        VK_NULL_HANDLE, texture_image_view_,
         vk::ImageLayout::eShaderReadOnlyOptimal
       };
+      vk::DescriptorImageInfo const sampler_info{texture_sampler_};
 
       device_.updateDescriptorSets(std::array{
                                      vk::WriteDescriptorSet{
@@ -674,8 +682,13 @@ public:
                                      },
                                      vk::WriteDescriptorSet{
                                        descriptor_sets_[i], 1, 0,
-                                       vk::DescriptorType::eCombinedImageSampler,
+                                       vk::DescriptorType::eSampledImage,
                                        image_info
+                                     },
+                                     vk::WriteDescriptorSet{
+                                       descriptor_sets_[i], 2, 0,
+                                       vk::DescriptorType::eSampler,
+                                       sampler_info
                                      },
                                    }, {});
     }
