@@ -1,16 +1,20 @@
-#include <vulkan/vulkan.hpp>
-
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/hash.hpp>
 
-#include <stb/stb_image.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
-#include <tinyobjloader/tiny_obj_loader.h>
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <vulkan/vulkan.hpp>
 
 #include <algorithm>
 #include <array>
@@ -23,12 +27,14 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <set>
 #include <span>
 #include <string>
 #include <string_view>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -104,11 +110,27 @@ struct std::hash<Vertex> {
 class Application {
 public:
   Application() {
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    window_ = glfwCreateWindow(960, 540, "Vulkan Test", nullptr, nullptr);
-    glfwSetWindowUserPointer(window_, this);
-    glfwSetFramebufferSizeCallback(window_, &FramebufferSizeCallback);
+    WNDCLASSW const window_class{
+      0, &WindowProc, 0, 0, GetModuleHandleW(nullptr), nullptr, nullptr,
+      nullptr, nullptr, L"Vulkan Test Window Class"
+    };
+
+    if (!RegisterClassW(&window_class)) {
+      throw std::runtime_error{"Failed to register window class."};
+    }
+
+    hwnd_.reset(CreateWindowExW(0, window_class.lpszClassName, L"Vulkan Test",
+                                WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+                                CW_USEDEFAULT, 960, 540, nullptr, nullptr,
+                                window_class.hInstance, nullptr));
+
+    if (!hwnd_) {
+      throw std::runtime_error{"Failed to create window."};
+    }
+
+    SetWindowLongPtrW(hwnd_.get(), GWLP_USERDATA,
+                      std::bit_cast<LONG_PTR>(this));
+    ShowWindow(hwnd_.get(), SW_SHOW);
 
     std::vector<char const*> enabled_layers;
 
@@ -139,13 +161,8 @@ public:
       VK_MAKE_VERSION(0, 1, 0), VK_API_VERSION_1_0
     };
 
-    std::uint32_t glfw_extension_count{0};
-    auto const glfw_extensions{
-      glfwGetRequiredInstanceExtensions(&glfw_extension_count)
-    };
-
-    std::vector<char const*> enabled_instance_extensions{
-      glfw_extensions, glfw_extensions + glfw_extension_count
+    std::vector enabled_instance_extensions{
+      VK_KHR_SURFACE_EXTENSION_NAME, "VK_KHR_win32_surface"
     };
 
 #ifndef NDEBUG
@@ -183,10 +200,9 @@ public:
       instance_create_info_chain.get<vk::DebugUtilsMessengerCreateInfoEXT>());
 #endif
 
-    if (glfwCreateWindowSurface(instance_, window_, nullptr, &surface_) !=
-      VK_SUCCESS) {
-      throw std::runtime_error{"Failed to create window surface."};
-    }
+    surface_ = instance_.createWin32SurfaceKHR(vk::Win32SurfaceCreateInfoKHR{
+      {}, window_class.hInstance, hwnd_.get()
+    });
 
     std::array constexpr enabled_device_extensions{
       VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -755,24 +771,30 @@ public:
 
     device_.destroy();
 
-    vkDestroySurfaceKHR(instance_, surface_, nullptr);
+    instance_.destroy(surface_);
 
 #ifndef NDEBUG
     instance_.destroyDebugUtilsMessengerEXT(debug_utils_messenger_);
 #endif
 
     instance_.destroy();
-
-    glfwDestroyWindow(window_);
-    glfwTerminate();
   }
 
   auto operator=(Application const& other) -> void = delete;
   auto operator=(Application&& other) -> void = delete;
 
   auto run() -> void {
-    while (!glfwWindowShouldClose(window_)) {
-      glfwPollEvents();
+    while (true) {
+      MSG msg;
+      while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        if (msg.message == WM_QUIT) {
+          device_.waitIdle();
+          return;
+        }
+
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+      }
 
       if (device_.waitForFences(in_flight_fences_[current_frame_], vk::True,
                                 std::numeric_limits<std::uint64_t>::max()) !=
@@ -890,8 +912,6 @@ public:
 
       current_frame_ = (current_frame_ + 1) % max_frames_in_flight_;
     }
-
-    device_.waitIdle();
   }
 
 private:
@@ -916,13 +936,28 @@ private:
   }
 
   auto RecreateSwapChain() -> void {
-    auto width{0};
-    auto height{0};
-    glfwGetFramebufferSize(window_, &width, &height);
+    std::uint32_t width;
+    std::uint32_t height;
+    RECT client_rect;
+    GetClientRect(hwnd_.get(), &client_rect);
+    CalculateWindowSize(client_rect, width, height);
 
     while (width == 0 || height == 0) {
-      glfwGetFramebufferSize(window_, &width, &height);
-      glfwWaitEvents();
+      GetClientRect(hwnd_.get(), &client_rect);
+      CalculateWindowSize(client_rect, width, height);
+
+      while (true) {
+        MSG msg;
+        if (auto const res{GetMessageW(&msg, nullptr, 0, 0)}) {
+          if (res == -1) {
+            throw std::runtime_error{"Failed to get window messages."};
+          }
+
+          TranslateMessage(&msg);
+          DispatchMessageW(&msg);
+          break;
+        }
+      }
     }
 
     device_.waitIdle();
@@ -932,16 +967,6 @@ private:
     CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
-  }
-
-  static auto FramebufferSizeCallback(GLFWwindow* const window,
-                                      [[maybe_unused]] int const width,
-                                      [[maybe_unused]] int const height) ->
-    void {
-    auto const app{
-      std::bit_cast<Application*>(glfwGetWindowUserPointer(window))
-    };
-    app->framebuffer_resized_ = true;
   }
 
   struct SwapChainSupportInfo {
@@ -1067,16 +1092,16 @@ private:
           return capabilities.currentExtent;
         }
 
-        int width;
-        int height;
-        glfwGetFramebufferSize(window_, &width, &height);
+        std::uint32_t width;
+        std::uint32_t height;
+        RECT client_rect;
+        GetClientRect(hwnd_.get(), &client_rect);
+        CalculateWindowSize(client_rect, width, height);
 
         return vk::Extent2D{
-          std::clamp(static_cast<std::uint32_t>(width),
-                     capabilities.minImageExtent.width,
+          std::clamp(width, capabilities.minImageExtent.width,
                      capabilities.maxImageExtent.width),
-          std::clamp(static_cast<std::uint32_t>(height),
-                     capabilities.minImageExtent.height,
+          std::clamp(height, capabilities.minImageExtent.height,
                      capabilities.maxImageExtent.height)
         };
       }()
@@ -1434,11 +1459,39 @@ private:
   }
 #endif
 
+  static auto CALLBACK WindowProc(HWND const hwnd, UINT const msg,
+                                  WPARAM const wparam,
+                                  LPARAM const lparam) -> LRESULT {
+    if (msg == WM_CLOSE) {
+      PostQuitMessage(0);
+      return 0;
+    }
+
+    if (msg == WM_SIZE) {
+      if (auto const app{
+        std::bit_cast<Application*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA))
+      }) {
+        app->framebuffer_resized_ = true;
+        return 0;
+      }
+    }
+
+    return DefWindowProcW(hwnd, msg, wparam, lparam);
+  }
+
+  static auto CalculateWindowSize(RECT const& window_rect, std::uint32_t& width,
+                                  std::uint32_t& height) -> void {
+    width = window_rect.right - window_rect.left;
+    height = window_rect.bottom - window_rect.top;
+  }
+
   static auto constexpr max_frames_in_flight_{2};
   static std::string_view constexpr model_path_{"models/viking_room.obj"};
   static std::string_view constexpr texture_path_{"textures/viking_room.png"};
 
-  GLFWwindow* window_{nullptr};
+  std::unique_ptr<std::remove_pointer_t<HWND>, decltype([](HWND const hwnd) {
+    if (hwnd) { DestroyWindow(hwnd); }
+  })> hwnd_{nullptr};
 
   vk::Instance instance_;
 
@@ -1452,7 +1505,7 @@ private:
   vk::Queue graphics_queue_;
   vk::Queue present_queue_;
 
-  VkSurfaceKHR surface_;
+  vk::SurfaceKHR surface_;
   vk::SwapchainKHR swap_chain_;
   std::vector<vk::Image> swap_chain_images_;
   std::vector<vk::ImageView> swap_chain_image_views_;

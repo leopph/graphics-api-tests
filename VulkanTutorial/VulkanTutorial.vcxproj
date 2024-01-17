@@ -103,8 +103,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="vendor\stb\stb_image.cpp" />
-    <ClCompile Include="vendor\tinyobjloader\tiny_obj_loader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="src\shaders\fragment.frag">
