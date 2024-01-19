@@ -9,6 +9,9 @@
  * - multiple barrier usage methods
  *   - legacy resource barriers
  *   - enhanced barriers
+ * - multiple fullscreen methods
+ *   - using a fullscreen swap chain
+ *   - using a windowed swap chain and a screen sized window
  *
  * Define NO_VERTEX_PULLING to prevent reading vertex buffers as shader resources
  *
@@ -16,7 +19,9 @@
  * Define NO_DYNAMIC_INDEXING to prevent the use of SM 5.1 dynamic indexing and unbounded arrays.
  * Define both NO_DYNAMIC_RESOURCES and NO_DYNAMIC_INDEXING to force the use of the traditional bindful approach.
  *
- * NO_ENHANCED_BARRIERS to prevent to use of enhanced barriers even on supported hardware.
+ * Define NO_ENHANCED_BARRIERS to prevent to use of enhanced barriers even on supported hardware.
+ *
+ * Define USE_FULLSCREEN_SWAP_CHAIN to use a fullscreen swap chain.
  */
 
 // Uncomment this if you want to opt out of reading vertex buffers as shader resources
@@ -30,6 +35,9 @@
 
 // Uncomment this if you want to opt out of using enhanced barriers
 // #define NO_ENHANCED_BARRIERS
+
+// Uncomment this if you want to use a fullscreen swap chain
+// #define USE_FULLSCREEN_SWAP_CHAIN
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -275,10 +283,12 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance,
   UINT swap_chain_flags{0};
   UINT present_flags{0};
 
+#ifndef USE_FULLSCREEN_SWAP_CHAIN
   if (tearing_supported) {
     swap_chain_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
     present_flags |= DXGI_PRESENT_ALLOW_TEARING;
   }
+#endif
 
   DXGI_SWAP_CHAIN_DESC1 const swap_chain_desc{
     .Width = static_cast<UINT>(swap_chain_width),
@@ -299,6 +309,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance,
   ComPtr<IDXGISwapChain4> swap_chain;
   ThrowIfFailed(swap_chain1.As(&swap_chain));
 
+#ifdef USE_FULLSCREEN_SWAP_CHAIN
+  ThrowIfFailed(swap_chain->SetFullscreenState(TRUE, output.Get()));
+  BOOL is_fullscreen{FALSE};
+#endif
+
   D3D12_DESCRIPTOR_HEAP_DESC constexpr rtv_heap_desc{
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV, .NumDescriptors = 2,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE, .NodeMask = 0
@@ -318,22 +333,30 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance,
   std::array<D3D12_CPU_DESCRIPTOR_HANDLE, swap_chain_buffer_count>
     swap_chain_rtvs;
 
-  for (UINT i = 0; i < swap_chain_buffer_count; i++) {
-    ThrowIfFailed(
-      swap_chain->GetBuffer(i, IID_PPV_ARGS(&swap_chain_buffers[i])));
+#ifdef USE_FULLSCREEN_SWAP_CHAIN
+  auto recreate_swap_chain_rtvs{
+    [&] {
+#endif
+      for (UINT i = 0; i < swap_chain_buffer_count; i++) {
+        ThrowIfFailed(
+          swap_chain->GetBuffer(i, IID_PPV_ARGS(&swap_chain_buffers[i])));
 
-    swap_chain_rtvs[i].ptr = rtv_heap_cpu_start.ptr + static_cast<SIZE_T>(i) *
-      rtv_heap_increment;
+        swap_chain_rtvs[i].ptr = rtv_heap_cpu_start.ptr + static_cast<SIZE_T>(i)
+          * rtv_heap_increment;
 
-    D3D12_RENDER_TARGET_VIEW_DESC constexpr rtv_desc{
-      .Format = swap_chain_format,
-      .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-      .Texture2D = {.MipSlice = 0, .PlaneSlice = 0}
-    };
+        D3D12_RENDER_TARGET_VIEW_DESC constexpr rtv_desc{
+          .Format = swap_chain_format,
+          .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+          .Texture2D = {.MipSlice = 0, .PlaneSlice = 0}
+        };
 
-    device->CreateRenderTargetView(swap_chain_buffers[i].Get(), &rtv_desc,
-                                   swap_chain_rtvs[i]);
-  }
+        device->CreateRenderTargetView(swap_chain_buffers[i].Get(), &rtv_desc,
+                                       swap_chain_rtvs[i]);
+      }
+#ifdef USE_FULLSCREEN_SWAP_CHAIN
+    }
+  };
+#endif
 
   constexpr auto max_frames_in_flight{2};
   UINT64 this_frame_fence_value{max_frames_in_flight - 1};
@@ -1019,6 +1042,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance,
 
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
       if (msg.message == WM_QUIT) {
+#ifdef USE_FULLSCREEN_SWAP_CHAIN
+        ThrowIfFailed(swap_chain->SetFullscreenState(FALSE, nullptr));
+#endif
         wait_for_gpu_idle();
         return static_cast<int>(msg.wParam);
       }
@@ -1026,6 +1052,20 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance,
       TranslateMessage(&msg);
       DispatchMessageW(&msg);
     }
+
+#ifdef USE_FULLSCREEN_SWAP_CHAIN
+    BOOL fullscreen_state;
+    ThrowIfFailed(swap_chain->GetFullscreenState(&fullscreen_state, nullptr));
+
+    if (fullscreen_state != is_fullscreen) {
+      swap_chain_buffers.fill(nullptr);
+      ThrowIfFailed(
+        swap_chain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN,
+                                  swap_chain_flags));
+      recreate_swap_chain_rtvs();
+      is_fullscreen = fullscreen_state;
+    }
+#endif
 
     auto back_buffer_idx{swap_chain->GetCurrentBackBufferIndex()};
 

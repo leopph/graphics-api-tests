@@ -17,6 +17,9 @@ The D3D12 project contains implementations for
 - multiple barrier usage methods
   - legacy resource barriers (ResourceBarrier API)
   - enhanced barriers (Barrier API)
+- multiple fullscreen methods
+  - using a fullscreen swap chain
+  - using a windowed swap chain and a screen sized window
 - etc.
 
 These can be toggled using macros. See *main.cpp* for more details.
