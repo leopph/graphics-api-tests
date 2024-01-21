@@ -2,8 +2,9 @@
 
 This repository is a collection of my test projects using several different graphics APIs. I use these to try and play with new features and learn about the different methods and techniques.
 
-## VulkanTutorial
+## Vulkan
 A Vulkan learning project based on https://vulkan-tutorial.com/.
+Uses the vulkan.hpp binding.
 
 ## D3D12
 The D3D12 project contains implementations for
