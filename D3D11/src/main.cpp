@@ -14,7 +14,6 @@
 #include <wrl/client.h>
 
 #include <array>
-#include <cassert>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -133,32 +132,23 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
                                     device_create_flags, std::array{D3D_FEATURE_LEVEL_11_0}.data(), 1,
                                     D3D11_SDK_VERSION, &device, nullptr, &immediate_ctx));
 
-    [[maybe_unused]] HRESULT hr;
-
 #ifndef NDEBUG
     ComPtr<ID3D11Debug> debug;
-    hr = device.As<ID3D11Debug>(&debug);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device.As<ID3D11Debug>(&debug));
     ComPtr<ID3D11InfoQueue> info_queue;
-    hr = debug.As<ID3D11InfoQueue>(&info_queue);
-    assert(SUCCEEDED(hr));
-    hr = info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
-    assert(SUCCEEDED(hr));
-    hr = info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(debug.As<ID3D11InfoQueue>(&info_queue));
+    ThrowIfFailed(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE));
+    ThrowIfFailed(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE));
 #endif
 
     ComPtr<ID3D11DeviceContext> deferred_ctx;
-    hr = device->CreateDeferredContext(0, &deferred_ctx);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateDeferredContext(0, &deferred_ctx));
 
     ComPtr<IDXGIDevice4> dxgi_device;
-    hr = device.As(&dxgi_device);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device.As(&dxgi_device));
 
     ComPtr<IDXGIAdapter> adapter;
-    hr = dxgi_device->GetAdapter(&adapter);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(dxgi_device->GetAdapter(&adapter));
 
     UINT swap_chain_flags{0};
     UINT present_flags{0};
@@ -186,79 +176,67 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<IDXGISwapChain1> tmp_swap_chain;
-    hr = factory->CreateSwapChainForHwnd(device.Get(), hwnd.get(), &swap_chain_desc, nullptr, nullptr, &tmp_swap_chain);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(factory->CreateSwapChainForHwnd(device.Get(), hwnd.get(), &swap_chain_desc, nullptr, nullptr,
+                                                  &tmp_swap_chain));
 
     ComPtr<IDXGISwapChain2> swap_chain;
-    hr = tmp_swap_chain.As(&swap_chain);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(tmp_swap_chain.As(&swap_chain));
 
     auto constexpr max_frames_in_flight{2};
 
 #ifndef NO_WAITABLE_SWAP_CHAIN
     auto const frame_latency_waitable_object{swap_chain->GetFrameLatencyWaitableObject()};
-    hr = swap_chain->SetMaximumFrameLatency(max_frames_in_flight);
+    ThrowIfFailed(swap_chain->SetMaximumFrameLatency(max_frames_in_flight));
 #else
-  hr = dxgi_device->SetMaximumFrameLatency(max_frames_in_flight);
+    ThrowIfFailed(dxgi_device->SetMaximumFrameLatency(max_frames_in_flight));
 #endif
-    assert(SUCCEEDED(hr));
 
     ComPtr<ID3D11Texture2D> back_buffer;
-    hr = swap_chain->GetBuffer(0, IID_PPV_ARGS(&back_buffer));
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(swap_chain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)));
 
     D3D11_RENDER_TARGET_VIEW_DESC constexpr rtv_desc{
       .Format = swap_chain_format, .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D, .Texture2D = {.MipSlice = 0}
     };
 
     ComPtr<ID3D11RenderTargetView> back_buffer_rtv;
-    hr = device->CreateRenderTargetView(back_buffer.Get(), &rtv_desc, &back_buffer_rtv);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateRenderTargetView(back_buffer.Get(), &rtv_desc, &back_buffer_rtv));
 
     D3D11_UNORDERED_ACCESS_VIEW_DESC constexpr uav_desc{
       .Format = swap_chain_format, .ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D, .Texture2D = {.MipSlice = 0}
     };
 
     ComPtr<ID3D11UnorderedAccessView> back_buffer_uav;
-    hr = device->CreateUnorderedAccessView(back_buffer.Get(), &uav_desc, &back_buffer_uav);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateUnorderedAccessView(back_buffer.Get(), &uav_desc, &back_buffer_uav));
 
     ComPtr<ID3D11VertexShader> vertex_shader;
-    hr = device->CreateVertexShader(kvsBin, ARRAYSIZE(kvsBin), nullptr, &vertex_shader);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateVertexShader(kvsBin, ARRAYSIZE(kvsBin), nullptr, &vertex_shader));
 
     ComPtr<ID3D11PixelShader> pixel_shader;
-    hr = device->CreatePixelShader(kpsBin, ARRAYSIZE(kpsBin), nullptr, &pixel_shader);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreatePixelShader(kpsBin, ARRAYSIZE(kpsBin), nullptr, &pixel_shader));
 
     ComPtr<ID3D11ComputeShader> compute_shader;
-    hr = device->CreateComputeShader(kcsBin, ARRAYSIZE(kcsBin), nullptr, &compute_shader);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateComputeShader(kcsBin, ARRAYSIZE(kcsBin), nullptr, &compute_shader));
 
     ComPtr<ID3D11ShaderReflection> vs_reflection;
-    hr = D3DReflect(kvsBin, ARRAYSIZE(kvsBin), IID_PPV_ARGS(&vs_reflection));
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(D3DReflect(kvsBin, ARRAYSIZE(kvsBin), IID_PPV_ARGS(&vs_reflection)));
 
     D3D11_SHADER_DESC vs_desc;
-    hr = vs_reflection->GetDesc(&vs_desc);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(vs_reflection->GetDesc(&vs_desc));
 
     std::vector<D3D11_INPUT_ELEMENT_DESC> input_elements;
     input_elements.reserve(vs_desc.InputParameters);
 
     for (UINT i{0}; i < vs_desc.InputParameters; i++) {
       D3D11_SIGNATURE_PARAMETER_DESC parameter_desc;
-      hr = vs_reflection->GetInputParameterDesc(i, &parameter_desc);
-      assert(SUCCEEDED(hr));
+      ThrowIfFailed(vs_reflection->GetInputParameterDesc(i, &parameter_desc));
 
       input_elements.emplace_back(parameter_desc.SemanticName, parameter_desc.SemanticIndex, DXGI_FORMAT_R32G32_FLOAT,
                                   0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0);
     }
 
     ComPtr<ID3D11InputLayout> input_layout;
-    hr = device->CreateInputLayout(input_elements.data(), static_cast<UINT>(input_elements.size()), kvsBin,
-                                   ARRAYSIZE(kvsBin), &input_layout);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateInputLayout(input_elements.data(), static_cast<UINT>(input_elements.size()), kvsBin,
+                                            ARRAYSIZE(kvsBin), &input_layout));
 
     std::array constexpr vertex_data{0.0f, 0.5f, 0.5f, -0.5f, -0.5f, -0.5f};
 
@@ -272,8 +250,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<ID3D11Buffer> vertex_buffer;
-    hr = device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_init_data, &vertex_buffer);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_init_data, &vertex_buffer));
 
     std::array<std::uint16_t, 3> constexpr index_data{0, 1, 2};
 
@@ -287,8 +264,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<ID3D11Buffer> index_buffer;
-    hr = device->CreateBuffer(&index_buffer_desc, &index_buffer_init_data, &index_buffer);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateBuffer(&index_buffer_desc, &index_buffer_init_data, &index_buffer));
 
     D3D11_BUFFER_DESC constexpr cbuffer_desc{
       .ByteWidth = sizeof(ConstantBuffer) + 16 - sizeof(ConstantBuffer) % 16, .Usage = D3D11_USAGE_DYNAMIC,
@@ -297,8 +273,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<ID3D11Buffer> cbuffer;
-    hr = device->CreateBuffer(&cbuffer_desc, nullptr, &cbuffer);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateBuffer(&cbuffer_desc, nullptr, &cbuffer));
 
     D3D11_TEXTURE2D_DESC constexpr texture_desc{
       .Width = 1, .Height = 1, .MipLevels = 1, .ArraySize = 1, .Format = DXGI_FORMAT_R32G32B32A32_FLOAT,
@@ -316,8 +291,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<ID3D11Texture2D> texture;
-    hr = device->CreateTexture2D(&texture_desc, &texture_init_data, &texture);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateTexture2D(&texture_desc, &texture_init_data, &texture));
 
     D3D11_SHADER_RESOURCE_VIEW_DESC constexpr texture_srv_desc{
       .Format = texture_desc.Format, .ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D,
@@ -325,8 +299,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     };
 
     ComPtr<ID3D11ShaderResourceView> texture_srv;
-    hr = device->CreateShaderResourceView(texture.Get(), &texture_srv_desc, &texture_srv);
-    assert(SUCCEEDED(hr));
+    ThrowIfFailed(device->CreateShaderResourceView(texture.Get(), &texture_srv_desc, &texture_srv));
 
     while (true) {
 #ifndef NO_WAITABLE_SWAP_CHAIN
@@ -343,8 +316,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       }
 
       D3D11_MAPPED_SUBRESOURCE cbuffer_mapped;
-      hr = deferred_ctx->Map(cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &cbuffer_mapped);
-      assert(SUCCEEDED(hr));
+      ThrowIfFailed(deferred_ctx->Map(cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &cbuffer_mapped));
 
       ConstantBuffer const cbuffer_data{.square_color = fullscreen_hardware_composition_supported ? green : red};
 
@@ -359,8 +331,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
       deferred_ctx->Dispatch(50, 50, 1);
 
       ComPtr<ID3D11CommandList> command_list;
-      hr = deferred_ctx->FinishCommandList(FALSE, &command_list);
-      assert(SUCCEEDED(hr));
+      ThrowIfFailed(deferred_ctx->FinishCommandList(FALSE, &command_list));
 
       immediate_ctx->ExecuteCommandList(command_list.Get(), FALSE);
 
@@ -389,13 +360,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
       deferred_ctx->DrawIndexedInstanced(static_cast<UINT>(index_data.size()), 1, 0, 0, 0);
 
-      hr = deferred_ctx->FinishCommandList(FALSE, &command_list);
-      assert(SUCCEEDED(hr));
+      ThrowIfFailed(deferred_ctx->FinishCommandList(FALSE, &command_list));
 
       immediate_ctx->ExecuteCommandList(command_list.Get(), FALSE);
 
-      hr = swap_chain->Present(0, present_flags);
-      assert(SUCCEEDED(hr));
+      ThrowIfFailed(swap_chain->Present(0, present_flags));
     }
   } catch (...) {
     return -1;
