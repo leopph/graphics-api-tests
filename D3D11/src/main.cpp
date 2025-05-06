@@ -7,11 +7,11 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <Windows.h>
 #include <d3d11_4.h>
-#include <dxgi1_6.h>
-#include <wrl/client.h>
 #include <d3dcompiler.h>
+#include <dxgi1_6.h>
+#include <Windows.h>
+#include <wrl/client.h>
 
 #include <array>
 #include <cassert>
@@ -48,14 +48,11 @@ auto CALLBACK WindowProc(HWND const hwnd, UINT const msg, WPARAM const wparam, L
 }
 
 
-auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance, [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nShowCmd) -> int {
+auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ HINSTANCE const hPrevInstance,
+                     [[maybe_unused]] _In_ PWSTR const pCmdLine, _In_ int const nShowCmd) -> int {
   WNDCLASSW const window_class{
-    .style = 0,
-    .lpfnWndProc = &WindowProc,
-    .hInstance = hInstance,
-    .hIcon = nullptr,
-    .hCursor = LoadCursorW(nullptr, IDC_ARROW),
-    .lpszClassName = L"D3D11 Test"
+    .style = 0, .lpfnWndProc = &WindowProc, .hInstance = hInstance, .hIcon = nullptr,
+    .hCursor = LoadCursorW(nullptr, IDC_ARROW), .lpszClassName = L"D3D11 Test"
   };
 
   [[maybe_unused]] auto const atom{RegisterClassW(&window_class)};
@@ -70,7 +67,10 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto const primary_monitor_screen_width{GetSystemMetrics(SM_CXSCREEN)};
   auto const primary_monitor_screen_height{GetSystemMetrics(SM_CYSCREEN)};
 
-  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{CreateWindowExW(0, window_class.lpszClassName, L"D3D11 Test", WS_POPUP, 0, 0, primary_monitor_screen_width, primary_monitor_screen_height, nullptr, nullptr, window_class.hInstance, nullptr)};
+  std::unique_ptr<std::remove_pointer_t<HWND>, WindowDeleter> const hwnd{
+    CreateWindowExW(0, window_class.lpszClassName, L"D3D11 Test", WS_POPUP, 0, 0, primary_monitor_screen_width,
+                    primary_monitor_screen_height, nullptr, nullptr, window_class.hInstance, nullptr)
+  };
   ShowWindow(hwnd.get(), nShowCmd);
 
   using Microsoft::WRL::ComPtr;
@@ -84,7 +84,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> immediate_ctx;
-  hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, device_create_flags, std::array{D3D_FEATURE_LEVEL_11_0}.data(), 1, D3D11_SDK_VERSION, &device, nullptr, &immediate_ctx);
+  hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, device_create_flags,
+                         std::array{D3D_FEATURE_LEVEL_11_0}.data(), 1, D3D11_SDK_VERSION, &device, nullptr,
+                         &immediate_ctx);
   assert(SUCCEEDED(hr));
 
 #ifndef NDEBUG
@@ -138,17 +140,11 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   auto constexpr swap_chain_buffer_count{2};
 
   DXGI_SWAP_CHAIN_DESC1 const swap_chain_desc{
-    .Width = static_cast<UINT>(swap_chain_width),
-    .Height = static_cast<UINT>(swap_chain_height),
-    .Format = swap_chain_format,
-    .Stereo = FALSE,
-    .SampleDesc{.Count = 1, .Quality = 0},
+    .Width = static_cast<UINT>(swap_chain_width), .Height = static_cast<UINT>(swap_chain_height),
+    .Format = swap_chain_format, .Stereo = FALSE, .SampleDesc{.Count = 1, .Quality = 0},
     .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_UNORDERED_ACCESS,
-    .BufferCount = swap_chain_buffer_count,
-    .Scaling = DXGI_SCALING_STRETCH,
-    .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-    .Flags = swap_chain_flags
+    .BufferCount = swap_chain_buffer_count, .Scaling = DXGI_SCALING_STRETCH,
+    .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD, .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED, .Flags = swap_chain_flags
   };
 
   ComPtr<IDXGISwapChain1> tmp_swap_chain;
@@ -164,9 +160,14 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
 
   if (ComPtr<IDXGIOutput> output; SUCCEEDED(swap_chain->GetContainingOutput(&output))) {
     if (ComPtr<IDXGIOutput6> output6; SUCCEEDED(output.As(&output6))) {
-      if (UINT hardware_composition_support{0}; SUCCEEDED(output6->CheckHardwareCompositionSupport(&hardware_composition_support))) {
-        fullscreen_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN ? TRUE : FALSE;
-        windowed_hardware_composition_supported = hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? TRUE : FALSE;
+      if (UINT hardware_composition_support{0}; SUCCEEDED(
+        output6->CheckHardwareCompositionSupport(&hardware_composition_support))) {
+        fullscreen_hardware_composition_supported = hardware_composition_support &
+                                                    DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN
+                                                      ? TRUE
+                                                      : FALSE;
+        windowed_hardware_composition_supported =
+          hardware_composition_support & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED ? TRUE : FALSE;
       }
     }
   }
@@ -186,9 +187,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   D3D11_RENDER_TARGET_VIEW_DESC constexpr rtv_desc{
-    .Format = swap_chain_format,
-    .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-    .Texture2D = {.MipSlice = 0}
+    .Format = swap_chain_format, .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D, .Texture2D = {.MipSlice = 0}
   };
 
   ComPtr<ID3D11RenderTargetView> back_buffer_rtv;
@@ -196,9 +195,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   D3D11_UNORDERED_ACCESS_VIEW_DESC constexpr uav_desc{
-    .Format = swap_chain_format,
-    .ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D,
-    .Texture2D = {.MipSlice = 0}
+    .Format = swap_chain_format, .ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D, .Texture2D = {.MipSlice = 0}
   };
 
   ComPtr<ID3D11UnorderedAccessView> back_buffer_uav;
@@ -233,55 +230,39 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = vs_reflection->GetInputParameterDesc(i, &parameter_desc);
     assert(SUCCEEDED(hr));
 
-    input_elements.emplace_back(parameter_desc.SemanticName, parameter_desc.SemanticIndex, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0);
+    input_elements.emplace_back(parameter_desc.SemanticName, parameter_desc.SemanticIndex, DXGI_FORMAT_R32G32_FLOAT, 0,
+                                D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0);
   }
 
   ComPtr<ID3D11InputLayout> input_layout;
-  hr = device->CreateInputLayout(input_elements.data(), static_cast<UINT>(input_elements.size()), kvsBin, ARRAYSIZE(kvsBin), &input_layout);
+  hr = device->CreateInputLayout(input_elements.data(), static_cast<UINT>(input_elements.size()), kvsBin,
+                                 ARRAYSIZE(kvsBin), &input_layout);
   assert(SUCCEEDED(hr));
 
-  std::array constexpr vertex_data{
-    0.0f, 0.5f,
-    0.5f, -0.5f,
-    -0.5f, -0.5f
-  };
+  std::array constexpr vertex_data{0.0f, 0.5f, 0.5f, -0.5f, -0.5f, -0.5f};
 
   D3D11_BUFFER_DESC constexpr vertex_buffer_desc{
-    .ByteWidth = sizeof vertex_data,
-    .Usage = D3D11_USAGE_IMMUTABLE,
-    .BindFlags = D3D11_BIND_VERTEX_BUFFER,
-    .CPUAccessFlags = 0,
-    .MiscFlags = 0,
-    .StructureByteStride = 0
+    .ByteWidth = sizeof vertex_data, .Usage = D3D11_USAGE_IMMUTABLE, .BindFlags = D3D11_BIND_VERTEX_BUFFER,
+    .CPUAccessFlags = 0, .MiscFlags = 0, .StructureByteStride = 0
   };
 
   D3D11_SUBRESOURCE_DATA const vertex_buffer_init_data{
-    .pSysMem = vertex_data.data(),
-    .SysMemPitch = 0,
-    .SysMemSlicePitch = 0
+    .pSysMem = vertex_data.data(), .SysMemPitch = 0, .SysMemSlicePitch = 0
   };
 
   ComPtr<ID3D11Buffer> vertex_buffer;
   hr = device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_init_data, &vertex_buffer);
   assert(SUCCEEDED(hr));
 
-  std::array<std::uint16_t, 3> constexpr index_data{
-    0, 1, 2
-  };
+  std::array<std::uint16_t, 3> constexpr index_data{0, 1, 2};
 
   D3D11_BUFFER_DESC constexpr index_buffer_desc{
-    .ByteWidth = sizeof index_data,
-    .Usage = D3D11_USAGE_IMMUTABLE,
-    .BindFlags = D3D11_BIND_INDEX_BUFFER,
-    .CPUAccessFlags = 0,
-    .MiscFlags = 0,
-    .StructureByteStride = 0
+    .ByteWidth = sizeof index_data, .Usage = D3D11_USAGE_IMMUTABLE, .BindFlags = D3D11_BIND_INDEX_BUFFER,
+    .CPUAccessFlags = 0, .MiscFlags = 0, .StructureByteStride = 0
   };
 
   D3D11_SUBRESOURCE_DATA const index_buffer_init_data{
-    .pSysMem = index_data.data(),
-    .SysMemPitch = 0,
-    .SysMemSlicePitch = 0
+    .pSysMem = index_data.data(), .SysMemPitch = 0, .SysMemSlicePitch = 0
   };
 
   ComPtr<ID3D11Buffer> index_buffer;
@@ -289,11 +270,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   D3D11_BUFFER_DESC constexpr cbuffer_desc{
-    .ByteWidth = sizeof(ConstantBuffer) + 16 - sizeof(ConstantBuffer) % 16,
-    .Usage = D3D11_USAGE_DYNAMIC,
-    .BindFlags = D3D11_BIND_CONSTANT_BUFFER,
-    .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
-    .MiscFlags = 0,
+    .ByteWidth = sizeof(ConstantBuffer) + 16 - sizeof(ConstantBuffer) % 16, .Usage = D3D11_USAGE_DYNAMIC,
+    .BindFlags = D3D11_BIND_CONSTANT_BUFFER, .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE, .MiscFlags = 0,
     .StructureByteStride = 0
   };
 
@@ -302,16 +280,9 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   D3D11_TEXTURE2D_DESC constexpr texture_desc{
-    .Width = 1,
-    .Height = 1,
-    .MipLevels = 1,
-    .ArraySize = 1,
-    .Format = DXGI_FORMAT_R32G32B32A32_FLOAT,
-    .SampleDesc = {.Count = 1, .Quality = 0},
-    .Usage = D3D11_USAGE_IMMUTABLE,
-    .BindFlags = D3D11_BIND_SHADER_RESOURCE,
-    .CPUAccessFlags = 0,
-    .MiscFlags = 0
+    .Width = 1, .Height = 1, .MipLevels = 1, .ArraySize = 1, .Format = DXGI_FORMAT_R32G32B32A32_FLOAT,
+    .SampleDesc = {.Count = 1, .Quality = 0}, .Usage = D3D11_USAGE_IMMUTABLE, .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+    .CPUAccessFlags = 0, .MiscFlags = 0
   };
 
   std::array constexpr green{0.16f, 0.67f, 0.53f, 1.0f};
@@ -319,9 +290,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   std::array constexpr dark_gray{0.1f, 0.1f, 0.1f, 1.0f};
 
   D3D11_SUBRESOURCE_DATA const texture_init_data{
-    .pSysMem = (windowed_hardware_composition_supported ? green : red).data(),
-    .SysMemPitch = 128,
-    .SysMemSlicePitch = 0
+    .pSysMem = (windowed_hardware_composition_supported ? green : red).data(), .SysMemPitch = 128, .SysMemSlicePitch = 0
   };
 
   ComPtr<ID3D11Texture2D> texture;
@@ -329,8 +298,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
   assert(SUCCEEDED(hr));
 
   D3D11_SHADER_RESOURCE_VIEW_DESC constexpr texture_srv_desc{
-    .Format = texture_desc.Format,
-    .ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D,
+    .Format = texture_desc.Format, .ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D,
     .Texture2D = {.MostDetailedMip = 0, .MipLevels = 1}
   };
 
@@ -356,9 +324,7 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     hr = deferred_ctx->Map(cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &cbuffer_mapped);
     assert(SUCCEEDED(hr));
 
-    ConstantBuffer const cbuffer_data{
-      .square_color = fullscreen_hardware_composition_supported ? green : red
-    };
+    ConstantBuffer const cbuffer_data{.square_color = fullscreen_hardware_composition_supported ? green : red};
 
     std::memcpy(cbuffer_mapped.pData, &cbuffer_data, sizeof cbuffer_data);
     deferred_ctx->Unmap(cbuffer.Get(), 0);
@@ -390,12 +356,8 @@ auto WINAPI wWinMain(_In_ HINSTANCE const hInstance, [[maybe_unused]] _In_opt_ H
     deferred_ctx->PSSetShaderResources(TEXTURE_SLOT, 1, texture_srv.GetAddressOf());
 
     D3D11_VIEWPORT const viewport{
-      .TopLeftX = 0,
-      .TopLeftY = 0,
-      .Width = static_cast<FLOAT>(swap_chain_width),
-      .Height = static_cast<FLOAT>(swap_chain_height),
-      .MinDepth = 0,
-      .MaxDepth = 1
+      .TopLeftX = 0, .TopLeftY = 0, .Width = static_cast<FLOAT>(swap_chain_width),
+      .Height = static_cast<FLOAT>(swap_chain_height), .MinDepth = 0, .MaxDepth = 1
     };
 
     deferred_ctx->RSSetViewports(1, &viewport);
