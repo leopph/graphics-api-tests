@@ -1451,10 +1451,10 @@ private:
 
 #ifndef NDEBUG
   [[nodiscard]] static VKAPI_ATTR auto VKAPI_CALL DebugCallback(
-    [[maybe_unused]] VkDebugUtilsMessageSeverityFlagBitsEXT const severity,
-    [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT const type,
-    VkDebugUtilsMessengerCallbackDataEXT const* const callback_data,
-    [[maybe_unused]] void* const user_data) -> VkBool32 {
+    [[maybe_unused]] vk::DebugUtilsMessageSeverityFlagBitsEXT const severity,
+    [[maybe_unused]] vk::DebugUtilsMessageTypeFlagsEXT const type,
+    vk::DebugUtilsMessengerCallbackDataEXT const* const callback_data,
+    [[maybe_unused]] void* const user_data) -> vk::Bool32 {
     std::cerr << "Validation layer: " << callback_data->pMessage << '\n';
     return vk::False;
   }
